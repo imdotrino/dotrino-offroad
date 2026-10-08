@@ -14,16 +14,16 @@
   },
   "dependencies": {
     "@dotrino/identity": "0.109.0",
-    "@dotrino/install": "0.3.1",
+    "@dotrino/install": "0.3.2",
     "@dotrino/nav": "0.3.0",
-    "@dotrino/reputation": "0.9.0",
+    "@dotrino/reputation": "0.12.0",
     "@dotrino/share": "0.3.0",
-    "@dotrino/store": "0.12.2",
-    "@dotrino/support": "0.8.1",
-    "@dotrino/topbar": "0.13.1"
+    "@dotrino/store": "0.12.3",
+    "@dotrino/support": "0.9.0",
+    "@dotrino/topbar": "0.15.3"
   },
   "overrides": {
-    "@dotrino/store": "0.12.2"
+    "@dotrino/store": "0.12.3"
   },
   "devDependencies": {
     "@playwright/test": "1.60.0",
