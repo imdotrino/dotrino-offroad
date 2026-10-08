@@ -1,0 +1,16 @@
+{
+  "name": "Offroad — Dotrino",
+  "short_name": "Offroad",
+  "description": "Carreras de camionetas todoterreno en pixel art: lomas, charcos, nitro y taller de mejoras. Funciona sin conexión.",
+  "start_url": "./",
+  "scope": "./",
+  "launch_handler": { "client_mode": "focus-existing" },
+  "display": "standalone",
+  "background_color": "#16110d",
+  "theme_color": "#f08a24",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

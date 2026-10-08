@@ -1,0 +1,6 @@
+# Solo la cáscara pública del juego es indexable. El avance del jugador vive en su
+# almacén y las carreras compartidas viajan por #fragment: nunca llegan al servidor.
+User-agent: *
+Allow: /
+
+Sitemap: https://offroad.dotrino.com/sitemap.xml

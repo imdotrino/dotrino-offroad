@@ -1,0 +1,33 @@
+{
+  "name": "offroad",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Offroad — carreras de camionetas todoterreno en pixel art, con la pista entera en pantalla (Vite, sin framework). Ecosistema Dotrino.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node tests/sim.mjs",
+    "test:e2e": "playwright test",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dotrino/identity": "0.109.0",
+    "@dotrino/install": "0.3.1",
+    "@dotrino/nav": "0.3.0",
+    "@dotrino/reputation": "0.9.0",
+    "@dotrino/share": "0.3.0",
+    "@dotrino/store": "0.12.2",
+    "@dotrino/support": "0.8.1",
+    "@dotrino/topbar": "0.13.1"
+  },
+  "overrides": {
+    "@dotrino/store": "0.12.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.1"
+  }
+}
