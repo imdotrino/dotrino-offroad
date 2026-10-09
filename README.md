@@ -61,8 +61,10 @@ npm run test:e2e   # Playwright sobre el build
 Las pistas se **arman por piezas** a partir de una semilla (`generateLayout` en `src/track.js`):
 sobre una cuadrícula de 3×3 casillas se elige un grupo de casillas pegadas y la pista es su
 contorno: cada lado es una recta, cada vértice una curva, y algunas esquinas se cortan en
-diagonal. La misma semilla da siempre la misma pista (por eso se comparte por enlace), y
-3.000 semillas dan más de 2.000 formas distintas. Quedan ocho trazados dibujados a mano
+diagonal. Sobre eso se añaden dos piezas: el **cruce** (dos rectas enfrentadas se cambian de
+lado por dos diagonales que se cortan, y sale un ocho) y la **chicana** (en una recta larga la
+pista se desvía a un lado y vuelve, si el desvío cabe). La misma semilla da siempre la misma pista (por eso se comparte por enlace), y
+3.000 semillas dan más de 2.300 formas distintas (230 con cruce, 760 con chicana). Quedan ocho trazados dibujados a mano
 (`LAYOUTS`): el óvalo de la primera carrera y los de cruce (ocho, reloj de arena) de los jefes.
 
 `npm test` comprueba que la máquina lo completa.

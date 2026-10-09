@@ -41,7 +41,9 @@ function build () {
       id: 'n' + idx, type, region: ri, x, row, requires, requireMode, gate,
       label: boss ? 0 : depth + 1,
       race: {
-        layout: made ? undefined : layout, size: 3 + ri + (idx % 2), reversed: made ? idx % 3 === 0 : !!reversed, seed: seedFor(idx),
+        layout: made ? undefined : layout, size: 3 + ri + (idx % 2),
+        // La primera región va sin cruces; las chicanas aparecen desde el principio.
+        cross: ri === 0 ? 0 : 0.6, chicane: 0.35 + ri * 0.1, reversed: made ? idx % 3 === 0 : !!reversed, seed: seedFor(idx),
         bumps: reg.bumps + (boss ? 1 : 0), ...OBSTACLES[reg.key],
         hills: reg.hills, ramps: reg.ramps, grip: reg.grip, laps: boss ? 4 : 3,
         // Nivel de las máquinas (escala 0..6 de las mejoras).

@@ -35,8 +35,10 @@ const CELLS = 3;
  * El polígono de una pista generada (en el cuadro unidad), con el lado más largo primero.
  * @param {number} seed
  * @param {number} [size]  cuántas casillas (3..7): más casillas, más curvas
+ * @param {{cross?:number, chicane?:number}} [opts]  probabilidad de cruce y de chicana (0..1)
  */
-export function generateLayout (seed, size = 4) {
+export function generateLayout (seed, size = 4, opts = {}) {
+  const pCross = opts.cross ?? 0.45, pChicane = opts.chicane ?? 0.5;
   const rand = rng((seed ^ 0x7f4a7c15) >>> 0);
   const key = (x, y) => y * CELLS + x;
   const want = Math.max(3, Math.min(7, Math.round(size)));
@@ -86,13 +88,81 @@ export function generateLayout (seed, size = 4) {
       out.push([b[0] - (b[0] - a[0]) / la * 0.4, b[1] - (b[1] - a[1]) / la * 0.4], [b[0] + (c[0] - b[0]) / lc * 0.4, b[1] + (c[1] - b[1]) / lc * 0.4]);
     } else out.push(b);
   }
-  // La salida va en el lado más largo.
+  let poly = out, crossed = false, chicanes = 0;
+  const axisOf = (a, b) => (Math.abs(a[1] - b[1]) < 1e-9 ? 0 : Math.abs(a[0] - b[0]) < 1e-9 ? 1 : -1);   // 0 horizontal, 1 vertical
+
+  // CRUCE. Dos rectas enfrentadas (una va, la otra vuelve) con todo el hueco entre ellas dentro
+  // del circuito: se cambian de lado por dos diagonales que se cortan en medio, y el tramo que
+  // queda entre ambas se recorre al revés. Es el «ocho».
+  if (rand() < pCross) {
+    const found = [];
+    for (let i = 0; i < poly.length; i++) {
+      const A = poly[i], B = poly[(i + 1) % poly.length], ax = axisOf(A, B);
+      if (ax < 0 || B[ax] <= A[ax]) continue;                      // la primera va en sentido +
+      for (let k = 0; k < poly.length; k++) {
+        const C = poly[k], D = poly[(k + 1) % poly.length];
+        if (k === i || axisOf(C, D) !== ax || D[ax] >= C[ax]) continue;     // la otra, en sentido −
+        const ua = Math.max(A[ax], D[ax]), ub = Math.min(B[ax], C[ax]), v1 = A[1 - ax], v2 = C[1 - ax];
+        // Separadas dos casillas o más: con una sola, los dos lazos quedan sin isleta y el
+        // cruce se lee como una explanada.
+        if (ub - ua < 1.9 || Math.abs(v1 - v2) < 1.9) continue;
+        let inside = true;
+        for (let u = Math.floor(ua + 1e-6); u < Math.ceil(ub - 1e-6); u++) {
+          for (let v = Math.round(Math.min(v1, v2)); v < Math.round(Math.max(v1, v2)); v++) if (!has(ax ? v : u, ax ? u : v)) inside = false;
+        }
+        if (inside) found.push({ i, k, ax, ua, ub, v1, v2 });
+      }
+    }
+    if (found.length) {
+      const f = found[Math.floor(rand() * found.length)];
+      const m2 = poly.length, rot = poly.slice(f.i).concat(poly.slice(0, f.i)), j = (f.k - f.i + m2) % m2;
+      const span = f.ub - f.ua, du = Math.max(0.8, span * 0.34), u1 = f.ua + (span - du) / 2, u2 = u1 + du;
+      const at = (u, v) => (f.ax ? [v, u] : [u, v]);
+      poly = [rot[0], at(u1, f.v1), at(u2, f.v2), ...rot.slice(1, j + 1).reverse(), at(u2, f.v1), at(u1, f.v2), ...rot.slice(j + 1)];
+      crossed = true;
+    }
+  }
+
+  // La salida va en la recta más larga (nunca en una diagonal).
   let best = 0, bestLen = 0;
-  for (let i = 0; i < out.length; i++) {
-    const q = out[(i + 1) % out.length], len = Math.hypot(q[0] - out[i][0], q[1] - out[i][1]) + rand() * 0.01;
+  for (let i = 0; i < poly.length; i++) {
+    const q = poly[(i + 1) % poly.length];
+    if (axisOf(poly[i], q) < 0) continue;
+    const len = Math.hypot(q[0] - poly[i][0], q[1] - poly[i][1]) + rand() * 0.01;
     if (len > bestLen) { bestLen = len; best = i; }
   }
-  return out.slice(best).concat(out.slice(0, best)).map(q => [q[0] / CELLS, q[1] / CELLS]);
+  poly = poly.slice(best).concat(poly.slice(0, best));
+
+  // CHICANAS. En una recta larga, la pista se desvía a un lado y vuelve. Solo si el desvío
+  // cabe: dentro de la cuadrícula y sin acercarse a ningún otro tramo.
+  const PX = [(W - 104) / CELLS, (H - 108) / CELLS];             // una casilla, en px (ver FX/FY)
+  const distSeg = (p, a, b) => {
+    const vx = (b[0] - a[0]) * PX[0], vy = (b[1] - a[1]) * PX[1], wx = (p[0] - a[0]) * PX[0], wy = (p[1] - a[1]) * PX[1];
+    const t = Math.max(0, Math.min(1, (wx * vx + wy * vy) / (vx * vx + vy * vy || 1)));
+    return Math.hypot(wx - vx * t, wy - vy * t);
+  };
+  for (let i = 1; i < poly.length && chicanes < 2; i++) {
+    const A = poly[i], B = poly[(i + 1) % poly.length], ax = axisOf(A, B);
+    const len = ax < 0 ? 0 : Math.abs(B[ax] - A[ax]);
+    if (len < 1.8 || rand() >= pChicane) continue;
+    const dir = Math.sign(B[ax] - A[ax]), mid = (A[ax] + B[ax]) / 2;
+    for (const side of rand() < 0.5 ? [1, -1] : [-1, 1]) {
+      const v = A[1 - ax] + side * 0.42;
+      const pt = (u, w) => (ax ? [w, u] : [u, w]);
+      const jog = [pt(mid - dir * 0.2, v), pt(mid + dir * 0.2, v)];
+      let fits = v > 0.02 && v < CELLS - 0.02;
+      for (let k = 0; fits && k < poly.length; k++) {
+        if (k === i || k === (i + 1) % poly.length || k === (i + poly.length - 1) % poly.length) continue;
+        if (jog.some(q => distSeg(q, poly[k], poly[(k + 1) % poly.length]) < 66)) fits = false;
+      }
+      if (!fits) continue;
+      poly.splice(i + 1, 0, pt(mid - dir * 0.52, A[1 - ax]), jog[0], jog[1], pt(mid + dir * 0.52, A[1 - ax]));
+      i += 4; chicanes++;
+      break;
+    }
+  }
+  const pts = poly.map(q => [q[0] / CELLS, q[1] / CELLS]);
+  return Object.assign(pts, { crossed, chicanes });
 }
 
 const CORNER_R = 60;           // radio de las curvas (se achica solo si el lado es corto)
@@ -204,13 +274,13 @@ function buildField (s) {
 
 /**
  * Construye una pista.
- * @param {{layout?:number, size?:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, whoops?:number, mounds?:number, rocks?:number}} spec
+ * @param {{layout?:number, size?:number, cross?:number, chicane?:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, whoops?:number, mounds?:number, rocks?:number}} spec
  */
 export function buildTrack (spec) {
   // Con `layout`, uno de los trazados dibujados a mano; sin él, una pista por piezas de su semilla.
   const layout = spec.layout != null
     ? LAYOUTS[spec.layout % LAYOUTS.length]
-    : { name: 'gen', pts: generateLayout(spec.seed, spec.size) };
+    : { name: 'gen', pts: generateLayout(spec.seed, spec.size, { cross: spec.cross, chicane: spec.chicane }) };
   let pts = layout.pts.map(p => [FX + p[0] * FW, FY + p[1] * FH]);
   // Al revés: mismo trazado en sentido contrario, conservando p0→p1 como recta de salida.
   if (spec.reversed) pts = [pts[1], pts[0]].concat(pts.slice(2).reverse());
@@ -363,7 +433,8 @@ export function buildTrack (spec) {
     rocks.push(r);
   }
 
-  return { spec, name: layout.name, samples, n, field, near, height, bumps, ramps, hills, puddles, whoops, mounds, rocks, half: HALF };
+  return { spec, name: layout.name, samples, n, field, near, height, bumps, ramps, hills, puddles, whoops, mounds, rocks, half: HALF,
+    crossed: !!layout.pts.crossed, chicanes: layout.pts.chicanes || 0 };
 }
 
 function sample (f, x, y, out) {

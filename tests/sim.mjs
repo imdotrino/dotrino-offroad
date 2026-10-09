@@ -40,32 +40,49 @@ for (let i = 0; i < LAYOUTS.length; i++) {
   }
 }
 
-// 1b. Pistas por piezas: hay muchas formas distintas, la misma semilla da la misma pista,
-//      caben en el mundo, dos tramos no se pisan, y la máquina las termina.
+// 1b. Pistas por piezas: hay muchas formas distintas, con cruces y chicanas; la misma semilla
+//      da la misma pista; caben en el mundo; dos tramos no se pisan (salvo en su cruce); y la
+//      máquina las termina.
 {
   const shapes = new Set();
-  for (let seed = 1; seed <= 3000; seed++) shapes.add(JSON.stringify(generateLayout(seed, 3 + seed % 5)));
+  let crossed = 0, chicaned = 0;
+  for (let seed = 1; seed <= 3000; seed++) {
+    const g = generateLayout(seed, 3 + seed % 5);
+    shapes.add(JSON.stringify(g));
+    if (g.crossed) crossed++;
+    if (g.chicanes) chicaned++;
+  }
   assert.ok(shapes.size > 400, `only ${shapes.size} distinct generated layouts`);
+  assert.ok(crossed > 100, `only ${crossed} layouts with a crossing`);
+  assert.ok(chicaned > 200, `only ${chicaned} layouts with a chicane`);
   assert.deepEqual(generateLayout(77, 5), generateLayout(77, 5));
-  for (let seed = 11; seed < 51; seed++) {
+  assert.ok(!generateLayout(77, 6, { cross: 0, chicane: 0 }).crossed);
+  let ranCross = 0, ranChicane = 0, ranPlain = 0;
+  for (let seed = 11; seed < 111; seed++) {
     const node = randomNode(seed * 7919, { tires: 1, shocks: 1, accel: 1, speed: 1 });
     const t = buildTrack(node.race);
     for (const q of t.samples) assert.ok(q.x > t.half + 4 && q.x < W - t.half - 4 && q.y > t.half + 4 && q.y < H - t.half - 4, `gen ${seed}: leaves the world`);
+    let touching = 0;
     for (let i = 0; i < t.n; i++) {
       for (let j = i + 40; j < t.n; j++) {
         if (Math.min(j - i, t.n - (j - i)) < 40) continue;
         const d = Math.hypot(t.samples[i].x - t.samples[j].x, t.samples[i].y - t.samples[j].y);
-        assert.ok(d > t.half * 1.6, `gen ${seed}: two stretches overlap (${d.toFixed(0)} px apart)`);
+        if (d < 3) touching++;
+        if (!t.crossed) assert.ok(d > t.half * 1.6, `gen ${seed}: two stretches overlap (${d.toFixed(0)} px apart)`);
       }
     }
+    if (t.crossed) assert.ok(touching >= 1 && touching <= 6, `gen ${seed}: expected ONE clean crossing, got ${touching} touching pairs`);
     assert.ok(t.samples[0].curv < 0.45, `gen ${seed}: start line is not on a straight`);
-    if (seed % 4 === 0) {
+    const want = t.crossed ? ranCross < 4 : t.chicanes ? ranChicane < 5 : ranPlain < 3;
+    if (want) {
+      if (t.crossed) ranCross++; else if (t.chicanes) ranChicane++; else ranPlain++;
       const { race, resets } = run(node, 1);
       for (const tr of race.trucks) assert.ok(tr.finished, `gen ${seed}: truck ${tr.color} did not finish`);
       assert.ok(resets <= 3, `gen ${seed}: ${resets} stuck resets`);
     }
   }
-  console.log(`generated layouts: ${shapes.size} distinct out of 3000 seeds`);
+  assert.ok(ranCross >= 3 && ranChicane >= 3, `too few simulated: ${ranCross} crossed, ${ranChicane} with chicane`);
+  console.log(`generated layouts: ${shapes.size} distinct out of 3000 seeds · ${crossed} with a crossing · ${chicaned} with a chicane · simulated ${ranCross}+${ranChicane}+${ranPlain}`);
 }
 
 // 2. Todas las carreras del mapa se pueden terminar.
