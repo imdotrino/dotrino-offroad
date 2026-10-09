@@ -121,18 +121,22 @@ export function paintTrack (track, regionKey) {
     const lv = track.level[Math.floor(track.near[k]) % track.n];
     if (lv > 0.5) mul(k % W, (k / W) | 0, 1 + Math.min(0.2, lv * 0.007));
   }
-  // Rampas: un montículo de la misma tierra, que se lee desde cualquier lado: se aclara al
-  // subir, la cresta va marcada y justo detrás queda la sombra de la caída.
+  // Rampas: el plano lo sombrea la luz; aquí solo se marca la cresta con un filo claro.
   const n = track.n;
   for (let k = 0; k < W * H; k++) {
     if (track.field[k] >= half - 1) continue;
     for (const r of track.ramps) {
-      const c = (r - track.near[k] + n) % n;                 // muestras que faltan para el borde
-      const x = k % W, y = (k / W) | 0;
-      if (c <= RAMP_LEN + 0.5) {
-        const u = 1 - c / RAMP_LEN;
-        mul(x, y, c < 0.55 ? 1.5 : 0.9 + 0.34 * u * u);
-      } else if (n - c < 3.4) mul(x, y, 0.52 + 0.14 * (n - c));
+      const c = (r - track.near[k] + n) % n;
+      if (c < 0.55) mul(k % W, (k / W) | 0, 1.35);
+    }
+  }
+  // Huecos: el fondo, de tierra removida y más oscura.
+  for (const pt of track.pits) {
+    for (let y = Math.max(0, (pt.y - pt.ry) | 0); y <= Math.min(H - 1, (pt.y + pt.ry) | 0); y++) {
+      for (let x = Math.max(0, (pt.x - pt.rx) | 0); x <= Math.min(W - 1, (pt.x + pt.rx) | 0); x++) {
+        const e = Math.hypot((x - pt.x) / pt.rx, (y - pt.y) / pt.ry);
+        if (e < 1) mul(x, y, e > 0.8 ? 0.78 : 0.62 + 0.1 * blotch(x, y, 3));
+      }
     }
   }
   // Charcos
@@ -178,9 +182,9 @@ export function paintTrack (track, regionKey) {
       let shade = 0;
       for (let k = 1; k <= 26 && x - k >= 0 && y - k >= 0; k++) {
         const over = total[i - k * W - k] - total[i] - k * 0.95;
-        if (over > 0) { shade = Math.max(shade, Math.min(1, over / 2)); if (shade >= 1) break; }
+        if (over > 0) { shade = Math.max(shade, Math.min(1, over / 1.2)); if (shade >= 1) break; }
       }
-      if (shade) mul(x, y, 1 - 0.36 * shade);
+      if (shade) mul(x, y, 1 - 0.42 * shade);
     }
   }
   // Y un filo de luz en el canto de arriba de cada bloque.
@@ -197,7 +201,7 @@ export function paintTrack (track, regionKey) {
   for (let y = 1; y < H - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
-      const k = 1 + Math.max(-0.42, Math.min(0.3, (hg[i - 1] - hg[i + 1]) * 0.12 + (hg[i - W] - hg[i + W]) * 0.22));
+      const k = 1 + Math.max(-0.5, Math.min(0.38, (hg[i - 1] - hg[i + 1]) * 0.2 + (hg[i - W] - hg[i + W]) * 0.32));
       if (k !== 1) mul(x, y, k);
     }
   }
@@ -238,6 +242,15 @@ export function paintTrack (track, regionKey) {
       // En mitad de un corte (el punto de detrás también cae) va todo oscuro: si no, cada fila
       // del corte pinta su filo claro y la cara sale a rayas.
       const mid = face && y > 0 && total[i - W] - total[i] > 2.5;
+      if (top > baseRow) {
+        // Bajo el nivel del suelo (un hueco): de la boca al fondo se ve la pared de atrás, oscura.
+        for (let r = baseRow; r <= Math.min(SH - 1, top); r++) {
+          const o = (r * SW + sx) * 4, k = r === top ? 1 : 0.45;
+          out[o] = px[i * 4] * k; out[o + 1] = px[i * 4 + 1] * k; out[o + 2] = px[i * 4 + 2] * k;
+          depth[r * SW + sx] = y;
+        }
+        continue;
+      }
       for (let r = Math.max(0, top); r <= baseRow; r++) {
         const o = (r * SW + sx) * 4, k = face && (r > top || mid) ? 0.6 : 1;
         out[o] = px[i * 4] * k; out[o + 1] = px[i * 4 + 1] * k; out[o + 2] = px[i * 4 + 2] * k;
@@ -278,25 +291,40 @@ export function paintTrack (track, regionKey) {
 // Un modelo de cubitos (13 de largo × 7 de ancho × 6 de alto, mirando a +x) que se gira y se
 // proyecta con la misma perspectiva que el terreno: así cada ángulo enseña el costado que toca.
 // k rueda, B carrocería, D fondo de la caja, w cristal, h techo, l faro.
+// La camioneta es un CAMPO DE ALTURAS en planta (13×7 unidades, mirando a +x): carrocería,
+// caja, cabina, capó y ruedas. Las aristas van BISELADAS (la altura se redondea en los bordes)
+// y cada punto se ilumina por su normal, así que no quedan esquinas duras.
+const MR = 3;                         // celdas por unidad del modelo
+const MW = 13 * MR, MH = 7 * MR;
 function truckModel () {
-  const v = [];
-  const add = (x, y, z, c) => v.push({ x, y, z, c });
-  for (const x0 of [1, 9]) for (let dx = 0; dx < 3; dx++) for (let z = 0; z < 3; z++) {
-    if (dx !== 1 && z !== 1) continue;                  // rueda redondeada
-    add(x0 + dx, 0, z, 'k'); add(x0 + dx, 6, z, 'k');
+  const h = new Float32Array(MW * MH), c = new Uint8Array(MW * MH);   // c: 0 nada, 1 B, 2 D, 3 w, 4 h, 5 k, 6 l
+  for (let gy = 0; gy < MH; gy++) {
+    for (let gx = 0; gx < MW; gx++) {
+      const x = (gx + 0.5) / MR, y = (gy + 0.5) / MR, k = gy * MW + gx;
+      const wheel = (x >= 0.8 && x < 3.9 || x >= 8.9 && x < 12) && (y < 1.1 || y >= 5.9);
+      if (wheel) { h[k] = 2.3; c[k] = 5; continue; }
+      if (y < 1 || y >= 6) continue;
+      h[k] = 3; c[k] = 1;                                                   // carrocería
+      if (x < 4.6) { if (x > 0.5 && x < 4.2 && y > 1.5 && y < 5.5) { h[k] = 2; c[k] = 2; } }      // la caja, hundida
+      else if (x < 8.8) {                                                   // cabina
+        h[k] = 5.4; c[k] = 4;
+        if (x < 5.3 || x > 8.2 || y < 1.5 || y > 5.5) { h[k] = 4.9; c[k] = 3; }    // cristales
+      } else if (x >= 12.5 && (y < 1.8 || y > 5.2)) c[k] = 6;              // faros
+    }
   }
-  for (let x = 0; x <= 12; x++) for (let y = 1; y <= 5; y++) {
-    add(x, y, 1, 'B');
-    add(x, y, 2, x >= 1 && x <= 3 && y >= 2 && y <= 4 ? 'D' : (x === 12 && (y === 1 || y === 5) ? 'l' : 'B'));
-    const rim = y === 1 || y === 5;
-    if (x <= 4) { if (rim || x === 0 || x === 4) add(x, y, 3, 'B'); }           // caja
-    else if (x <= 8) {                                                           // cabina
-      add(x, y, 3, 'B');
-      add(x, y, 4, rim || x === 5 || x === 8 ? 'w' : 'B');
-      add(x, y, 5, 'h');
-    } else add(x, y, 3, 'B');                                                    // capó
+  // Bisel: la altura se limita por lo que dista del borde de su pieza (pendiente 1), en dos
+  // pasadas, y se suaviza una vez: aristas en chaflán y esquinas redondeadas.
+  const b = new Float32Array(h);
+  const at = (gx, gy) => (gx < 0 || gy < 0 || gx >= MW || gy >= MH ? 0 : h[gy * MW + gx]);
+  for (let gy = 0; gy < MH; gy++) for (let gx = 0; gx < MW; gx++) {
+    let lim = h[gy * MW + gx];
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const d = Math.hypot(dx, dy) / MR, nh = at(gx + dx, gy + dy);
+      if (nh < lim) lim = Math.min(lim, nh + d * 1.25);
+    }
+    b[gy * MW + gx] = lim;
   }
-  return v;
+  return { h: b, c };
 }
 const MODEL = truckModel();
 export const TRUCK_COLORS = {
@@ -307,49 +335,62 @@ export const TRUCK_COLORS = {
   black: { B: '#3a3540', D: '#15121a', h: '#8a8296' },
 };
 export const FRAMES = 32;
-const TS = 2;        // escala de la camioneta respecto al modelo de cubitos
-const SP = 46;        // lado del cuadro de cada sprite
-const AY = 29;        // fila del cuadro donde pisa el centro de la camioneta
+const TS = 1.75;      // escala de la camioneta respecto al modelo
+const SP = 42;        // lado del cuadro de cada sprite
+const AY = 27;        // fila del cuadro donde pisa el centro de la camioneta
+const LIGHT = [-0.5, -0.6, 0.62];   // de dónde viene la luz (noroeste, en alto)
 
-const shade = (hex, k) => {
-  const n = parseInt(hex.slice(1), 16);
-  const c = (s) => Math.max(0, Math.min(255, Math.round(((n >> s) & 255) * k)));
-  return `rgb(${c(16)},${c(8)},${c(0)})`;
-};
+const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
 
 function truckFrames (color) {
-  const base = { ...TRUCK_COLORS[color], k: '#1b1b20', w: '#9fd8ff', l: '#fff6b0' };
-  const top = {}, side = {};
-  for (const key of Object.keys(base)) { top[key] = base[key]; side[key] = shade(base[key], 0.66); }
+  const B = rgb(TRUCK_COLORS[color].B);
+  const pal = [null, B, rgb(TRUCK_COLORS[color].D), rgb('#8fc8f4'), B.map(v => Math.min(255, v * 1.12 + 10)), rgb('#1b1b20'), rgb('#fff6b0')];
   const frames = [];
+  const { h, c } = MODEL;
   for (let f = 0; f < FRAMES; f++) {
     const cv = document.createElement('canvas');
     cv.width = SP; cv.height = SP;
     const ctx = cv.getContext('2d');
+    const img = ctx.createImageData(SP, SP), out = img.data;
     const a = (f / FRAMES) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
-    // Cada cubito se parte en cuatro para no dejar huecos al girar.
-    const dots = [];
-    for (const vx of MODEL) {
-      for (const ox of [0.13, 0.38, 0.63, 0.88]) for (const oy of [0.13, 0.38, 0.63, 0.88]) for (const oz of [0.5, 1]) {
-        const lx = (vx.x + ox - 6.5) * TS, ly = (vx.y + oy - 3.5) * TS;
-        dots.push({ rx: lx * ca - ly * sa, ry: lx * sa + ly * ca, z: (vx.z + oz) * TS - 1, c: vx.c });
-      }
+    // Cada celda, girada; del fondo al frente, para que lo de delante tape.
+    const cells = [];
+    for (let gy = 0; gy < MH; gy++) for (let gx = 0; gx < MW; gx++) {
+      const k = gy * MW + gx;
+      if (!c[k]) continue;
+      const lx = ((gx + 0.5) / MR - 6.5) * TS, ly = ((gy + 0.5) / MR - 3.5) * TS;
+      // Normal del campo de alturas, girada con la camioneta.
+      const nx0 = (h[k - (gx > 0 ? 1 : 0)] - h[k + (gx < MW - 1 ? 1 : 0)]) * MR / 2;
+      const ny0 = (h[k - (gy > 0 ? MW : 0)] - h[k + (gy < MH - 1 ? MW : 0)]) * MR / 2;
+      const nx = nx0 * ca - ny0 * sa, ny = nx0 * sa + ny0 * ca;
+      const nl = Math.hypot(nx, ny, 1);
+      const lit = (nx * LIGHT[0] + ny * LIGHT[1] + LIGHT[2]) / nl;
+      cells.push({ rx: lx * ca - ly * sa, ry: lx * sa + ly * ca, z: h[k] * TS, c: c[k], lit });
     }
-    dots.sort((p, q) => (p.ry - q.ry) || (p.z - q.z));     // del fondo al frente, de abajo arriba
-    // `dy`: a qué distancia del centro (hacia el frente) está lo pintado en cada píxel.
+    cells.sort((p, q) => p.ry - q.ry);
     const dy = new Float32Array(SP * SP);
-    for (const d of dots) {
-      const x = Math.round(SP / 2 + d.rx - d.ry * SHEAR - 0.5), y = Math.round(AY + d.ry * KY - (d.z + 1) * KZ);
-      ctx.fillStyle = side[d.c]; ctx.fillRect(x, y + 1, 1, 1);
-      ctx.fillStyle = top[d.c]; ctx.fillRect(x, y, 1, 1);
-      if (x >= 0 && x < SP && y >= 0 && y + 1 < SP) { dy[y * SP + x] = d.ry; dy[(y + 1) * SP + x] = d.ry; }
+    const put = (x, y, col, k, ry) => {
+      if (x < 0 || y < 0 || x >= SP || y >= SP) return;
+      const o = (y * SP + x) * 4;
+      out[o] = Math.min(255, col[0] * k); out[o + 1] = Math.min(255, col[1] * k); out[o + 2] = Math.min(255, col[2] * k); out[o + 3] = 255;
+      dy[y * SP + x] = ry;
+    };
+    for (const d of cells) {
+      const x = Math.round(SP / 2 + d.rx - d.ry * SHEAR - 0.5), yb = AY + d.ry * KY, top = Math.round(yb - d.z * KZ);
+      const col = pal[d.c], k = 0.72 + 0.55 * Math.max(0, lit(d));
+      // Columna: desde su altura hasta el suelo (el costado, más oscuro), y la cara de arriba
+      // en un bloque de 2×2, para que entre dos celdas vecinas no asome el costado.
+      for (let y = top + 2; y <= Math.round(yb); y++) { put(x, y, col, 0.52, d.ry); put(x + 1, y, col, 0.52, d.ry); }
+      put(x, top, col, k, d.ry); put(x + 1, top, col, k, d.ry); put(x, top + 1, col, k, d.ry); put(x + 1, top + 1, col, k, d.ry);
     }
-    cv.pixels = ctx.getImageData(0, 0, SP, SP).data;
+    ctx.putImageData(img, 0, 0);
+    cv.pixels = out;
     cv.dy = dy;
     frames.push(cv);
   }
   return frames;
 }
+function lit (d) { return d.lit; }
 
 export function makeSprites () {
   const out = {};
@@ -364,7 +405,7 @@ export function makeSprites () {
     const ctx = cv.getContext('2d');
     const a = (f / FRAMES) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
     ctx.fillStyle = 'rgba(0,0,0,.34)';
-    for (let lx = -7 * TS; lx <= 7 * TS; lx += 0.5) for (let ly = -4 * TS; ly <= 4 * TS; ly += 0.5) {
+    for (let lx = -6.5 * TS; lx <= 6.5 * TS; lx += 0.5) for (let ly = -3.5 * TS; ly <= 3.5 * TS; ly += 0.5) {
       ctx.clearRect(Math.round(SP / 2 + lx * ca - ly * sa - (lx * sa + ly * ca) * SHEAR), Math.round(AY + (lx * sa + ly * ca) * KY), 1, 1);
       ctx.fillRect(Math.round(SP / 2 + lx * ca - ly * sa - (lx * sa + ly * ca) * SHEAR), Math.round(AY + (lx * sa + ly * ca) * KY), 1, 1);
     }
@@ -442,7 +483,7 @@ export function drawRace (ctx, bg, race, sprites, fx, t) {
   // Flecha sobre el jugador al arrancar, para que sepa cuál es la suya.
   const me = race.trucks[0];
   if ((race.state === 'countdown' || race.t < 2.5) && Math.floor(t * 5) % 2) {
-    const ax = Math.round(screenX(me.x, me.y)), ay = Math.round(screenY(me.y, ground(me.x, me.y) + me.z)) - 31;
+    const ax = Math.round(screenX(me.x, me.y)), ay = Math.round(screenY(me.y, ground(me.x, me.y) + me.z)) - 28;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(ax - 2, ay, 5, 1); ctx.fillRect(ax - 1, ay + 1, 3, 1); ctx.fillRect(ax, ay + 2, 1, 1);
   }
@@ -452,7 +493,7 @@ export function drawRace (ctx, bg, race, sprites, fx, t) {
 export function emitParticles (race, fx, dust) {
   for (const tr of race.trucks) {
     const speed = Math.hypot(tr.vx, tr.vy);
-    const bx = tr.x - Math.cos(tr.a) * 13, by = tr.y - Math.sin(tr.a) * 13;
+    const bx = tr.x - Math.cos(tr.a) * 11, by = tr.y - Math.sin(tr.a) * 11;
     if (tr.nitroT > 0) {
       for (let i = 0; i < 2; i++) fx.parts.push({ x: bx + Math.random() * 3 - 1.5, y: by + Math.random() * 3 - 1.5, z: tr.z + 2, vz: 0, vx: -tr.vx * 0.2, vy: -tr.vy * 0.2, life: 0.22, max: 0.22, size: 2, color: Math.random() < 0.5 ? '#ffd040' : '#ff6a20' });
     } else if (!tr.air && speed > 25 && Math.random() < 0.35) {

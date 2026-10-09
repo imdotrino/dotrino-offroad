@@ -363,7 +363,7 @@ function smoothCorners (field) {
 
 /**
  * Construye una pista.
- * @param {{layout?:number, size?:number, cross?:number, chicane?:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, whoops?:number, mounds?:number, rocks?:number, maxLevel?:number}} spec
+ * @param {{layout?:number, size?:number, cross?:number, chicane?:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, whoops?:number, mounds?:number, rocks?:number, pits?:number, maxLevel?:number}} spec
  */
 export function buildTrack (spec) {
   // Con `layout`, uno de los trazados dibujados a mano; sin él, una pista por piezas de su semilla.
@@ -394,92 +394,9 @@ export function buildTrack (spec) {
   smoothCorners(field);
   const rand = rng(spec.seed);
 
-  // Lomas: en tramos rectos, lejos de la salida y separadas entre sí.
-  const circ = (a, b) => Math.min(Math.abs(a - b), n - Math.abs(a - b));
-  // Cruces (el ocho, la espiral): ahí el suelo es de dos tramos a la vez, así que va plano.
-  const cross = [];
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 17; j < n; j++) {
-      if (circ(i, j) > 16 && Math.hypot(samples[i].x - samples[j].x, samples[i].y - samples[j].y) < HALF * 1.3) { cross.push(i, j); }
-    }
-  }
-  const nearCross = (i, m) => cross.some(c => circ(c, i) < m);
-  // Rampas: una subida larga que acaba en un borde cortado, en plena recta. A velocidad, la
-  // camioneta sale volando y cae bastante más allá (la física del salto está en sim.js).
-  const ramps = [];
-  const wantRamps = spec.ramps ?? 1;
-  // Se puntúa cada sitio posible por lo recto que es su tramo (la subida y la caída) y se
-  // elige al azar entre los rectos; si el trazado no tiene ninguno, vale el menos curvo.
-  const spots = [];
-  for (let i = RAMP_LEN + 4; i < n - 30; i++) {
-    if (nearCross(i, 24)) continue;
-    let worst = 0;
-    for (let o = -RAMP_LEN - 2; o <= 16; o++) worst = Math.max(worst, samples[(i + o + n) % n].curv);
-    spots.push({ i, worst });
-  }
-  for (let k = 0; k < wantRamps; k++) {
-    const free = spots.filter(q => !ramps.some(r => circ(r, q.i) < 50));
-    const good = free.filter(q => q.worst < 0.38);
-    if (good.length) ramps.push(good[Math.floor(rand() * good.length)].i);
-    else {
-      const best = free.sort((a, b) => a.worst - b.worst)[0];
-      if (best) ramps.push(best.i);          // sin recta larga: el tramo menos curvo que haya
-    }
-  }
-  const onRamp = (i, m) => ramps.some(r => { const c = (r - i + n) % n; return c <= RAMP_LEN + m || n - c <= 22 + m; });
-
-  const bumps = [];
-  const wantBumps = spec.bumps ?? 3;
-  for (let tries = 0; tries < 200 && bumps.length < wantBumps; tries++) {
-    const i = 14 + Math.floor(rand() * (n - 28));
-    if (samples[i].curv > 0.25 || nearCross(i, 6) || onRamp(i, 8)) continue;
-    if (bumps.some(b => circ(b, i) < 18)) continue;
-    bumps.push(i);
-  }
-  bumps.sort((a, b) => a - b);
-
-  // Cuestas: subidas largas y suaves. Frenan al subir y lanzan al bajar.
-  const hills = [];
-  const wantHills = spec.hills ?? 1;
-  for (let tries = 0; tries < 200 && hills.length < wantHills; tries++) {
-    const i = 20 + Math.floor(rand() * (n - 40));
-    if (nearCross(i, 16) || onRamp(i, 14) || bumps.some(b => circ(b, i) < 14) || hills.some(q => circ(q.i, i) < 40)) continue;
-    hills.push({ i, h: 7 + rand() * 3, s: 8 + rand() * 3 });   // bajas: una loma alta tapa la valla de detrás
-  }
-
-  const straightAt = (i, len) => { for (let o = 0; o <= len; o++) if (samples[(i + o) % n].curv > 0.25) return false; return true; };
-  // Ondulado: tres resaltos seguidos.
-  const whoops = [];
-  for (let tries = 0; tries < 300 && whoops.length < (spec.whoops ?? 1); tries++) {
-    const i = 16 + Math.floor(rand() * (n - 44));
-    if (!straightAt(i, 12) || nearCross(i, 12) || onRamp(i, 16) || bumps.some(b => circ(b, i) < 18) || hills.some(q => circ(q.i, i) < 16) || whoops.some(w => circ(w, i) < 30)) continue;
-    whoops.push(i);
-  }
-  // Montículos: no ocupan todo el ancho; el que lo pisa salta, el que lo esquiva no.
-  const mounds = [];
-  for (let tries = 0; tries < 300 && mounds.length < (spec.mounds ?? 2); tries++) {
-    const i = 16 + Math.floor(rand() * (n - 32));
-    if (nearCross(i, 10) || onRamp(i, 10) || bumps.some(b => circ(b, i) < 8) || whoops.some(w => circ(w + 5, i) < 12) || mounds.some(m => circ(m.i, i) < 14)) continue;
-    mounds.push({ i, lat: (rand() < 0.5 ? -1 : 1) * (8 + rand() * 18), h: 5 + rand() * 2 });
-  }
-
-  // Perfil de alturas a lo largo del eje, y de ahí la altura de cada punto del mundo: la de
-  // su tramo, que se va aplanando al alejarse de la pista.
-  const elev = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    let e = 0;
-    for (const b of bumps) { const c = circ(b, i) / 1.4; e += 4.5 * Math.exp(-c * c / 2); }
-    for (const w of whoops) for (let k = 0; k < 3; k++) { const c = circ((w + k * 5) % n, i) / 1.1; e += 3.4 * Math.exp(-c * c / 2); }
-    for (const r of ramps) {
-      const c = (r - i + n) % n;                       // muestras que faltan para el borde
-      if (c <= RAMP_LEN) { const u = 1 - c / RAMP_LEN; e += RAMP_H * u * u * (3 - 2 * u) * 0.35 + RAMP_H * u * 0.65; }
-    }
-    for (const q of hills) { const c = circ(q.i, i) / q.s; e += q.h * Math.exp(-c * c / 2); }
-    elev[i] = e;
-  }
   // NIVELES POR MÓDULOS. Cada esquina del trazado es un módulo a una altura (0, 1 o 2 pisos) y
-  // cada recta une dos: si están al mismo piso es llana; si no, una RAMPA empinada a media
-  // recta o, al bajar, un CORTE del que se cae volando. La pista queda hecha de bloques que
+  // cada recta une dos: si están al mismo piso es llana; si no, una RAMPA a media recta, más
+  // tendida o, al bajar, a 45° (la bajada brusca, de la que se sale volando). La pista queda hecha de bloques que
   // encajan, con su talud vertical por fuera.
   const m = pts.length, maxLevel = spec.maxLevel ?? 2;
   const vIdx = pts.map(p => { let b = 0, bd = 1e9; for (let i = 0; i < n; i++) { const d = Math.hypot(samples[i].x - p[0], samples[i].y - p[1]); if (d < bd) { bd = d; b = i; } } return b; });
@@ -516,10 +433,106 @@ export function buildTrack (spec) {
     if (drop) drops.push((sA + Math.floor(span / 2)) % n);
     for (let q = 0; q <= span; q++) {
       const t = q / Math.max(1, span);
-      level[(sA + q) % n] = LEVEL_H * (a === b ? a : drop ? (t < 0.5 ? a : b) : a + (b - a) * sm((t - 0.5 + rl / 2) / rl));
+      // Ningún desnivel pasa de 45°: la bajada brusca es una rampa a 45° justos (lo que baja
+      // es lo que avanza), no un corte vertical. Aun así, a velocidad se sale volando de arriba.
+      const steep = Math.min(0.9, (a - b) * LEVEL_H / STEP / Math.max(1, span));
+      const lin = Math.max(0, Math.min(1, (t - 0.5 + steep / 2) / steep));
+      level[(sA + q) % n] = LEVEL_H * (a === b ? a : drop ? a + (b - a) * lin : a + (b - a) * sm((t - 0.5 + rl / 2) / rl));
     }
   }
   const levels = lv;
+  // Un obstáculo nunca se pone donde cambia el piso (ni justo antes ni justo después): dos
+  // desniveles sumados pasarían de 45° y el filo de un corte quedaría mellado.
+  const onSlope = (i, m) => {
+    for (let o = -m; o <= m; o++) if (Math.abs(level[(i + o + n) % n] - level[(i + o + 1 + n) % n]) > 0.05) return true;
+    return false;
+  };
+
+  // Lomas: en tramos rectos, lejos de la salida y separadas entre sí.
+  const circ = (a, b) => Math.min(Math.abs(a - b), n - Math.abs(a - b));
+  // Cruces (el ocho, la espiral): ahí el suelo es de dos tramos a la vez, así que va plano.
+  const cross = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 17; j < n; j++) {
+      if (circ(i, j) > 16 && Math.hypot(samples[i].x - samples[j].x, samples[i].y - samples[j].y) < HALF * 1.3) { cross.push(i, j); }
+    }
+  }
+  const nearCross = (i, m) => cross.some(c => circ(c, i) < m);
+  // Rampas: una subida larga que acaba en un borde cortado, en plena recta. A velocidad, la
+  // camioneta sale volando y cae bastante más allá (la física del salto está en sim.js).
+  const ramps = [];
+  const wantRamps = spec.ramps ?? 1;
+  // Se puntúa cada sitio posible por lo recto que es su tramo (la subida y la caída) y se
+  // elige al azar entre los rectos; si el trazado no tiene ninguno, vale el menos curvo.
+  const spots = [];
+  for (let i = RAMP_LEN + 4; i < n - 30; i++) {
+    if (nearCross(i, 24) || onSlope(i, RAMP_LEN + 6)) continue;
+    let worst = 0;
+    for (let o = -RAMP_LEN - 2; o <= 16; o++) worst = Math.max(worst, samples[(i + o + n) % n].curv);
+    spots.push({ i, worst });
+  }
+  for (let k = 0; k < wantRamps; k++) {
+    const free = spots.filter(q => !ramps.some(r => circ(r, q.i) < 50));
+    const good = free.filter(q => q.worst < 0.38);
+    if (good.length) ramps.push(good[Math.floor(rand() * good.length)].i);
+    else {
+      const best = free.sort((a, b) => a.worst - b.worst)[0];
+      if (best) ramps.push(best.i);          // sin recta larga: el tramo menos curvo que haya
+    }
+  }
+  const onRamp = (i, m) => ramps.some(r => { const c = (r - i + n) % n; return c <= RAMP_LEN + m || n - c <= 22 + m; });
+
+  const bumps = [];
+  const wantBumps = spec.bumps ?? 3;
+  for (let tries = 0; tries < 200 && bumps.length < wantBumps; tries++) {
+    const i = 14 + Math.floor(rand() * (n - 28));
+    if (samples[i].curv > 0.25 || nearCross(i, 6) || onRamp(i, 8) || onSlope(i, 6)) continue;
+    if (bumps.some(b => circ(b, i) < 18)) continue;
+    bumps.push(i);
+  }
+  bumps.sort((a, b) => a - b);
+
+  // Cuestas: subidas largas y suaves. Frenan al subir y lanzan al bajar.
+  const hills = [];
+  const wantHills = spec.hills ?? 1;
+  for (let tries = 0; tries < 200 && hills.length < wantHills; tries++) {
+    const i = 20 + Math.floor(rand() * (n - 40));
+    if (nearCross(i, 16) || onRamp(i, 14) || onSlope(i, 18) || bumps.some(b => circ(b, i) < 14) || hills.some(q => circ(q.i, i) < 40)) continue;
+    hills.push({ i, h: 7 + rand() * 3, s: 8 + rand() * 3 });   // bajas: una loma alta tapa la valla de detrás
+  }
+
+  const straightAt = (i, len) => { for (let o = 0; o <= len; o++) if (samples[(i + o) % n].curv > 0.25) return false; return true; };
+  // Ondulado: tres resaltos seguidos.
+  const whoops = [];
+  for (let tries = 0; tries < 300 && whoops.length < (spec.whoops ?? 1); tries++) {
+    const i = 16 + Math.floor(rand() * (n - 44));
+    if (!straightAt(i, 12) || nearCross(i, 12) || onRamp(i, 16) || onSlope(i, 16) || bumps.some(b => circ(b, i) < 18) || hills.some(q => circ(q.i, i) < 16) || whoops.some(w => circ(w, i) < 30)) continue;
+    whoops.push(i);
+  }
+  // Montículos: no ocupan todo el ancho; el que lo pisa salta, el que lo esquiva no.
+  const mounds = [];
+  for (let tries = 0; tries < 300 && mounds.length < (spec.mounds ?? 2); tries++) {
+    const i = 16 + Math.floor(rand() * (n - 32));
+    if (nearCross(i, 10) || onRamp(i, 10) || onSlope(i, 8) || bumps.some(b => circ(b, i) < 8) || whoops.some(w => circ(w + 5, i) < 12) || mounds.some(m => circ(m.i, i) < 14)) continue;
+    mounds.push({ i, lat: (rand() < 0.5 ? -1 : 1) * (8 + rand() * 16), h: 8 + rand() * 2 });
+  }
+
+  // Perfil de alturas a lo largo del eje, y de ahí la altura de cada punto del mundo: la de
+  // su tramo, que se va aplanando al alejarse de la pista.
+  const elev = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let e = 0;
+    for (const b of bumps) { const c = circ(b, i) / 1.4; e += 4.5 * Math.exp(-c * c / 2); }
+    for (const w of whoops) for (let k = 0; k < 3; k++) { const c = circ((w + k * 5) % n, i) / 1.1; e += 3.4 * Math.exp(-c * c / 2); }
+    for (const r of ramps) {
+      const c = (r - i + n) % n;                       // muestras que faltan para el borde
+      if (c <= RAMP_LEN) e += RAMP_H * (1 - c / RAMP_LEN);                 // un plano, sin curvar: la sombra sale limpia
+      // Pasado el borde baja a 45°, no en vertical.
+      else if (n - c < RAMP_H / STEP) e += RAMP_H * (1 - (n - c) / (RAMP_H / STEP));
+    }
+    for (const q of hills) { const c = circ(q.i, i) / q.s; e += q.h * Math.exp(-c * c / 2); }
+    elev[i] = e;
+  }
 
   const height = new Float32Array(W * H);
   for (let k = 0; k < W * H; k++) {
@@ -540,9 +553,10 @@ export function buildTrack (spec) {
       const q = samples[i0], x = k % W, y = (k / W) | 0;
       const lat = -(x - q.x) * q.ty + (y - q.y) * q.tx;
       for (const m of mounds) {
-        let c = Math.abs(f - m.i); c = Math.min(c, n - c) / 1.7;
-        const l = (lat - m.lat) / 8;
-        hk += m.h * Math.exp(-(c * c + l * l) / 2);
+        // Cono con arista: se lee como una montaña, con su cara a la luz y su cara en sombra.
+        let c = Math.abs(f - m.i); c = Math.min(c, n - c) * STEP / 11;
+        const l = (lat - m.lat) / 11;
+        hk += m.h * Math.max(0, 1 - Math.hypot(c, l));
       }
     }
     height[k] = base + hk * fall;
@@ -565,7 +579,7 @@ export function buildTrack (spec) {
   const wantPuddles = spec.puddles ?? 2;
   for (let tries = 0; tries < 200 && puddles.length < wantPuddles; tries++) {
     const i = 14 + Math.floor(rand() * (n - 28));
-    if (bumps.some(b => circ(b, i) < 6) || onRamp(i, 4)) continue;
+    if (bumps.some(b => circ(b, i) < 6) || onRamp(i, 4) || onSlope(i, 4)) continue;
     const s = samples[i];
     const side = (rand() < 0.5 ? -1 : 1) * (6 + rand() * 20);
     const p = { x: s.x - s.ty * side, y: s.y + s.tx * side, r: 7 + rand() * 4, i };
@@ -573,12 +587,37 @@ export function buildTrack (spec) {
     puddles.push(p);
   }
 
+  // HUECOS: hoyos de paredes a 45° a un lado del eje. Se esquivan, o se cae dentro y cuesta
+  // salir. Van en la altura, así que la pared del fondo y la sombra salen solas.
+  const pits = [];
+  for (let tries = 0; tries < 300 && pits.length < (spec.pits ?? 0); tries++) {
+    const i = 14 + Math.floor(rand() * (n - 28));
+    if (nearCross(i, 10) || onRamp(i, 6) || onSlope(i, 6) || samples[i].curv > 0.3) continue;
+    if (bumps.some(b => circ(b, i) < 8) || mounds.some(m => circ(m.i, i) < 9) || whoops.some(w => circ(w + 5, i) < 12)) continue;
+    const q = samples[i], lat = (rand() < 0.5 ? -1 : 1) * (7 + rand() * 14);
+    const pt = { x: q.x - q.ty * lat, y: q.y + q.tx * lat, rx: 10 + rand() * 5, ry: 7 + rand() * 3, d: 6, i, lat };
+    if (field[Math.round(pt.y) * W + Math.round(pt.x)] > HALF - pt.rx - 4) continue;
+    if (pits.some(o => Math.hypot(o.x - pt.x, o.y - pt.y) < 40) || puddles.some(o => Math.hypot(o.x - pt.x, o.y - pt.y) < o.r + pt.rx + 4)) continue;
+    pits.push(pt);
+  }
+  for (const pt of pits) {
+    for (let y = Math.max(0, (pt.y - pt.ry - 2) | 0); y <= Math.min(H - 1, (pt.y + pt.ry + 2) | 0); y++) {
+      for (let x = Math.max(0, (pt.x - pt.rx - 2) | 0); x <= Math.min(W - 1, (pt.x + pt.rx + 2) | 0); x++) {
+        const e = Math.hypot((x - pt.x) / pt.rx, (y - pt.y) / pt.ry);     // 1 = el borde
+        if (e >= 1) continue;
+        // Del borde al fondo en 6 px (a 45°); el centro, plano.
+        const edge = Math.min(Math.hypot((1 - e) * pt.rx, (1 - e) * pt.ry), pt.d) / pt.d;
+        height[y * W + x] -= pt.d * edge;
+      }
+    }
+  }
+
   // Rocas: obstáculos SÓLIDOS a un lado del eje. Se rodean (o se saltan desde una rampa).
   const rocks = [];
   for (let tries = 0; tries < 400 && rocks.length < (spec.rocks ?? 2); tries++) {
     const i = 18 + Math.floor(rand() * (n - 30));
     // En recta: en plena curva o en un cruce una roca es una trampa, no un obstáculo.
-    if (nearCross(i, 14) || onRamp(i, 4) || samples[i].curv > 0.3 || samples[(i + n - 8) % n].curv > 0.3) continue;
+    if (nearCross(i, 14) || onRamp(i, 4) || onSlope(i, 5) || samples[i].curv > 0.3 || samples[(i + n - 8) % n].curv > 0.3) continue;
     const q = samples[i], lat = (rand() < 0.5 ? -1 : 1) * (6 + rand() * 22);
     const r = { x: q.x - q.ty * lat, y: q.y + q.tx * lat, r: 4.5 + rand() * 1.5, i, lat };
     if (field[Math.round(r.y) * W + Math.round(r.x)] > HALF - r.r - 4) continue;       // pegada a la valla no
@@ -586,7 +625,7 @@ export function buildTrack (spec) {
     rocks.push(r);
   }
 
-  return { spec, name: layout.name, samples, n, field, near, height, bumps, ramps, hills, puddles, whoops, mounds, rocks, levels, level, drops, corners, half: HALF,
+  return { spec, name: layout.name, samples, n, field, near, height, bumps, ramps, hills, puddles, whoops, mounds, rocks, pits, levels, level, drops, corners, half: HALF,
     crossed: !!(/** @type {any} */ (layout.pts)).crossed, chicanes: (/** @type {any} */ (layout.pts)).chicanes || 0 };
 }
 

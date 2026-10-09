@@ -49,6 +49,14 @@ no, lleva una rampa empinada a media recta o, al bajar, un corte del que se cae 
 bloque sube entero, con su valla, y por fuera queda el talud vertical. La salida va siempre a
 ras de suelo y las diagonales de un cruce también.
 
+Ningún desnivel pasa de 45°: las bajadas bruscas de un nivel y la caída de una rampa son
+planos a 45°, y los obstáculos nunca se ponen donde cambia el piso. Obstáculos: rampas
+(plano limpio con cresta), montañas (conos con arista), huecos (hoyos de paredes a 45°),
+lomas, ondulado, rocas y charcos.
+
+Las camionetas son un campo de alturas con las aristas biseladas, iluminado por su normal
+(`truckModel`), girado en 32 ángulos.
+
 Las sombras salen de las alturas (luz del noroeste): una valla, una roca, un talud o el borde
 de una rampa arrojan una sombra tan larga como altos son.
 
@@ -64,7 +72,7 @@ npm run test:e2e   # Playwright sobre el build
 | `src/track.js` | Trazados, muestreo del eje, campo de distancias y alturas (lógica pura) |
 | `src/sim.js` | Física (agarre, altura y saltos, choques), rivales, premios en pista (lógica pura y determinista) |
 | `src/levels.js` | Mapa, estrellas, premios y precios |
-| `src/render.js` | Perspectiva caballera: terreno con relieve y camionetas modeladas con cubitos |
+| `src/render.js` | Perspectiva caballera: terreno con relieve y camionetas biseladas con luz |
 | `src/race.js` | Pantalla de carrera: bucle, mandos y marcador |
 | `src/main.js` | Mapa, taller, resultado y compartir |
 

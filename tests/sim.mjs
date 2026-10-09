@@ -120,7 +120,7 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
     if (race.events.some(e => e.type === 'crash')) { crashed = true; bounced = a.vx < 0 && b.vx > 0; }
     race.events.length = 0;
   }
-  assert.ok(closest < 16 && closest > 10, `trucks should overlap about half their length (26 px), got ${closest.toFixed(1)}`);
+  assert.ok(closest < 14.5 && closest > 9, `trucks should overlap about half their length (23 px), got ${closest.toFixed(1)}`);
   assert.ok(crashed, 'a head-on hit must raise a crash event');
   assert.ok(bounced, 'trucks must bounce back');
 }
@@ -180,6 +180,28 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
       worst = Math.max(worst, Math.acos(Math.max(-1, Math.min(1, nx * mx + ny * my))));
     }
     assert.ok(worst < 1.15, `a wall turns ${(worst * 57.3).toFixed(0)}° within 6 px: that is a pointed corner`);
+  }
+  // Ningún desnivel de la pista pasa de 45°: entre dos puntos seguidos de la trazada (4 px) el
+  // suelo no cambia más de lo que se avanza. Vale para niveles, rampas, lomas y montículos.
+  for (const node of allNodes()) {
+    const t = buildTrack(node.race);
+    let worst = 0, at = 0;
+    for (let i = 0; i < t.n; i++) {
+      const p = t.samples[i], q = t.samples[(i + 1) % t.n];
+      const run = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+      const rise = Math.abs(t.height[Math.round(q.y) * W + Math.round(q.x)] - t.height[Math.round(p.y) * W + Math.round(p.x)]);
+      if (rise / run > worst) { worst = rise / run; at = i; }
+    }
+    assert.ok(worst <= 1.15, `${node.id}: a ${(Math.atan(worst) * 57.3).toFixed(0)}° step on the racing line at sample ${at}`);
+  }
+  // Huecos: los pide la región, caen dentro de la pista y bajan 6 con paredes a 45°.
+  {
+    const t = buildTrack({ seed: 9 * 104729, size: 5, maxLevel: 0, pits: 3, rocks: 0, mounds: 0, bumps: 0, whoops: 0, hills: 0, ramps: 0, puddles: 0 });
+    assert.ok(t.pits.length >= 2, `only ${t.pits.length} pits`);
+    for (const pt of t.pits) {
+      assert.ok(distAt(t, pt.x, pt.y) < t.half - pt.rx, 'pit outside the track');
+      assert.ok(t.height[Math.round(pt.y) * W + Math.round(pt.x)] < -4.5, 'pit floor should be 6 below');
+    }
   }
   assert.ok(high >= 18, `only ${high}/24 tracks have a raised stretch`);
   assert.ok(twoFloors >= 6, `only ${twoFloors}/24 tracks reach the second floor`);

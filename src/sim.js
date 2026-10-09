@@ -3,10 +3,10 @@
 import { rng, distAt, heightAt, W, H } from './track.js';
 
 export const MAX_LEVEL = 6;
-const TRUCK_R = 9;          // radio de choque de una camioneta contra las vallas
+const TRUCK_R = 8;          // radio de choque de una camioneta contra las vallas
 // Entre camionetas la caja de choque es la MITAD del dibujo: se meten una en otra al rozarse,
 // pero el golpe se nota (rebote, chispas y sonido).
-const CAR_R = 6.5;
+const CAR_R = 5.7;
 const GRAVITY = 175;        // baja: los saltos son largos, como en las máquinas de antes
 const LAUNCH = 1.6;         // cuánto exagera el despegue la subida que traía
 const VZ_MAX = 72;
