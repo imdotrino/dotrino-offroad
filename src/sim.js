@@ -51,7 +51,7 @@ export function createRace ({ track, trucks, laps, seed, grip = 1 }) {
       a: Math.atan2(s.ty, s.tx), vx: 0, vy: 0,
       // Altura: `g` suelo bajo la camioneta, `alt` la suya, `z` lo que vuela por encima.
       g: 0, alt: 0, z: 0, vz: 0, rate: 0, climb: 0, air: false, airT: 0, airMax: 0,
-      pitch: 0, roll: 0,
+      pitch: 0, roll: 0, pitchV: 0, rollV: 0,
       idx: i, lap: -1, progress: i - n,
       nitro: t.nitro ?? 0, nitroT: 0, nitroHeld: false,
       mud: false, finished: false, finishT: 0, place: 0,
@@ -209,6 +209,8 @@ function stepTruck (race, tr, input, dt) {
   if (tr.air) {
     tr.vz -= GRAVITY * dt; tr.alt += tr.vz * dt; tr.airT += dt;
     if (tr.alt <= g) {
+      // El golpe de aterrizar hunde el morro; unos amortiguadores mejores lo absorben.
+      tr.pitchV -= Math.min(60, -tr.vz) * 0.09 * Math.max(0.25, 1 - 0.1 * st.shocks);
       tr.air = false; tr.alt = g; tr.rate = 0; tr.vz = 0;
       if (tr.airT > tr.airMax) tr.airMax = tr.airT;
       if (tr.airT > 0.25) {
@@ -224,18 +226,30 @@ function stepTruck (race, tr, input, dt) {
   // Inclinación: en el suelo la camioneta se acomoda a la normal del piso (cabeceo a lo largo
   // del eje, balanceo entre las ruedas); en el aire levanta el morro al subir y lo baja al
   // caer. Se sigue con suavidad, como lo haría la suspensión.
+  // Encima va lo que hace la carrocería sobre la suspensión, ponderado por las mejoras: al
+  // girar se ladea hacia fuera (menos con mejores llantas), al acelerar levanta el morro y al
+  // frenar lo hunde, y al aterrizar rebota (menos, y más corto, con mejores amortiguadores).
   let pitchT, rollT;
   if (!tr.air) {
     const L = 5, Wd = 3;
     pitchT = Math.atan((heightAt(track, tr.x + fx * L, tr.y + fy * L) - heightAt(track, tr.x - fx * L, tr.y - fy * L)) / (2 * L));
     rollT = Math.atan((heightAt(track, tr.x - fy * Wd, tr.y + fx * Wd) - heightAt(track, tr.x + fy * Wd, tr.y - fx * Wd)) / (2 * Wd));
+    rollT += input.steer * Math.min(speed, 90) * 0.0028 * Math.max(0.5, 1.3 - 0.12 * st.tires);
+    if (!tr.finished) {
+      if (input.gas && speed < st.top * 0.9) pitchT += 0.05 * (1 + 0.1 * st.accel / 12);
+      else if (input.brake) pitchT -= 0.07;
+    }
+    if (tr.nitroT > 0) pitchT += 0.08;
   } else {
     pitchT = Math.atan2(tr.vz, Math.max(20, speed)) * 0.5;
     rollT = 0;
   }
-  const follow = Math.min(1, dt * (tr.air ? 6 : 14));
-  tr.pitch += (pitchT - tr.pitch) * follow;
-  tr.roll += (rollT - tr.roll) * follow;
+  // Muelle amortiguado: más duro y mejor amortiguado con mejores amortiguadores.
+  const omega = (tr.air ? 6 : 11) + 1.5 * Math.min(12, st.shocks), zeta = 0.5 + 0.07 * Math.min(12, st.shocks);
+  tr.pitchV += ((pitchT - tr.pitch) * omega * omega - 2 * zeta * omega * tr.pitchV) * dt;
+  tr.rollV += ((rollT - tr.roll) * omega * omega - 2 * zeta * omega * tr.rollV) * dt;
+  tr.pitch = Math.max(-1, Math.min(1, tr.pitch + tr.pitchV * dt));
+  tr.roll = Math.max(-1, Math.min(1, tr.roll + tr.rollV * dt));
 
   // Avance por el eje: la muestra más cercana dentro de una ventana (así un cruce no confunde).
   const prev = tr.idx;

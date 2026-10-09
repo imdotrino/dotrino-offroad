@@ -78,7 +78,7 @@ test('llegar cuarto no completa la carrera', async ({ page }) => {
   await expect(page.getByTestId('result-next')).toHaveCount(0)
 })
 
-test('pista al azar: cada semilla es una pista, da premio sin estrellas y se comparte por su semilla', async ({ page }) => {
+test('sin fin: cada semilla es una pista, el podio pasa de ronda, da premio sin estrellas y se comparte por su semilla', async ({ page }) => {
   await open(page)
   await page.getByTestId('random-btn').click()
   await expect(page.getByTestId('race-canvas')).toBeVisible()
@@ -88,11 +88,13 @@ test('pista al azar: cada semilla es una pista, da premio sin estrellas y se com
   const p = await page.evaluate(() => window.__offroad.progress)
   expect(p.money).toBe(110000)
   expect(Object.keys(p.nodes)).toHaveLength(0)
+  expect(p.endless).toEqual({ round: 1, best: 1 })
+  await expect(page.getByTestId('result-round')).toBeVisible()
   // Otra pista: semilla distinta.
   await page.getByTestId('result-another').click()
   await page.waitForFunction((old) => window.__offroad.race && window.__offroad.race.race.track.spec.seed !== old, a.seed)
-  // El enlace de la primera vuelve a dar exactamente esa pista.
-  await open(page, '#t=' + a.seed)
+  // El enlace de la primera (semilla y ronda) vuelve a dar exactamente esa pista.
+  await open(page, '#t=' + a.seed + '.0')
   await expect(page.getByTestId('race-canvas')).toBeVisible()
   const b = await page.evaluate(() => ({ seed: window.__offroad.race.race.track.spec.seed, n: window.__offroad.race.race.track.n }))
   expect(b).toEqual(a)

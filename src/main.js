@@ -5,7 +5,7 @@ import { loadProgress, saveProgress, onStoreProblem, storeHandle } from './store
 import {
   allNodes, nodeById, edges, maxRow, regionKey, totalStars, maxStars, nodeStars, isDone,
   isUnlocked, starsMissing, nextNodeId, followingNodeId, starsForPlace, prizeFor,
-  cashPickupValue, rivalsFor, randomNode, randomPrize, UPGRADES, MAX_UP, NITRO_PRICE, START, upgradePrice,
+  cashPickupValue, rivalsFor, randomNode, randomPrize, UPGRADES, NITRO_PRICE, START, upgradePrice,
 } from './levels.js';
 import { startRace } from './race.js';
 import { makeSprites, truckIcon } from './render.js';
@@ -81,7 +81,7 @@ topbar.addEventListener('dotrino-lang', (e) => {
 });
 
 /** Avance: { nodes:{[id]:{done,stars,bestMs,shared}}, money, nitro, up:{tires,shocks,accel,speed} } */
-let progress = { nodes: {}, money: START.money, nitro: START.nitro, up: { ...START.up } };
+let progress = { nodes: {}, money: START.money, nitro: START.nitro, up: { ...START.up }, endless: { round: 0, best: 0 } };
 let view = 'map';              // 'map' | 'garage' | 'race'
 let current = null;            // carrera en curso: { node, shared, handle }
 let layer = null;              // capa de "volver" abierta (carrera o taller)
@@ -126,10 +126,13 @@ function renderMap () {
     h('button', { class: 'btn primary', 'data-testid': 'garage-btn', onclick: () => openGarage() },
       h('span', { class: 'ic', html: IC.wrench }), t('garage')),
   );
-  // Pista al azar: una pista por piezas nueva cada vez (sin fin), fuera del campeonato.
+  // Sin fin: una pista por piezas nueva en cada ronda, fuera del campeonato; los rivales suben
+  // más rápido que el taller.
   const random = h('button', { class: 'card random', 'data-testid': 'random-btn', onclick: () => startRandom() },
     h('span', { class: 'ic', html: IC.dice }),
-    h('span', { class: 'card-txt' }, h('b', {}, t('randomTrack')), h('span', { class: 'muted' }, t('randomHelp'))));
+    h('span', { class: 'card-txt' }, h('b', {}, t('randomTrack') + ' · ' + t('round', { n: progress.endless.round + 1 })),
+      h('span', { class: 'muted' }, t('randomHelp')),
+      progress.endless.best ? h('span', { class: 'muted', 'data-testid': 'endless-best' }, t('bestRound', { n: progress.endless.best })) : null));
   clear(screen).append(bar, random, renderMapGraph());
 
   // El mapa sube: enfocar la próxima carrera.
@@ -201,10 +204,10 @@ function renderMapGraph () {
 // =====================================================================
 //  Carrera
 // =====================================================================
-/** Una carrera suelta en la pista de esa semilla (o en una nueva). */
-function startRandom (seed) {
+/** Una ronda del sin fin en la pista de esa semilla (o en una nueva), en la ronda dada o en la tuya. */
+function startRandom (seed, round) {
   const s = seed || (1 + Math.floor(Math.random() * 0x7ffffffe));
-  startNode(null, { node: randomNode(s, progress.up) });
+  startNode(null, { node: randomNode(s, progress.up, round ?? progress.endless.round) });
 }
 
 function startNode (id, opts = {}) {
@@ -234,7 +237,7 @@ function startNode (id, opts = {}) {
   view = 'race';
   document.body.classList.add('mode-race');
   clear(screen);
-  const title = (loose ? t('randomTrack') : n.type === 'boss' ? t('boss') : t('race') + ' ' + n.label) + ' · ' + t(regionKey(n.region));
+  const title = (loose ? t('randomTrack') + ' · ' + t('round', { n: n.round + 1 }) : n.type === 'boss' ? t('boss') : t('race') + ' ' + n.label) + ' · ' + t(regionKey(n.region));
   const handle = startRace({
     host: screen, spec: n.race, region: regionKey(n.region), sprites, title,
     trucks: [player, ...rivalsFor(n)],
@@ -248,13 +251,18 @@ function startNode (id, opts = {}) {
 function onRaceEnd (node, shared, res) {
   const place = res.place;
   if (node.type === 'random') {
-    // Carrera suelta: premio y nitros, sin estrellas ni mapa.
+    // Sin fin: premio y nitros, sin estrellas ni mapa. El podio pasa de ronda (si era la
+    // tuya; una ronda compartida más alta no adelanta); el 4.º puesto vuelve a la primera.
     const prize = randomPrize(node, place);
     const picked = res.cash * 5000 * (node.prizeRegion + 1);
     progress.money += prize + picked;
     progress.nitro = res.nitroLeft;
+    const e = progress.endless;
+    let roundLost = false;
+    if (place <= 3) { if (node.round === e.round) e.round++; e.best = Math.max(e.best, node.round + 1); }
+    else if (node.round === e.round && e.round > 0) { e.round = 0; roundLost = true; }
     persist();
-    showResult(node, false, { ...res, stars: starsForPlace(place), prize, picked, openedRegion: null });
+    showResult(node, false, { ...res, stars: starsForPlace(place), prize, picked, openedRegion: null, roundLost });
     return;
   }
   const stars = starsForPlace(place);
@@ -302,9 +310,10 @@ function showResult (node, shared, r) {
       starRow(r.stars, 'win-stars'),
       meta,
       r.openedRegion != null ? h('div', { class: 'region-open' }, t('regionUnlocked', { r: t(regionKey(r.openedRegion)) })) : null,
+      loose ? h('div', { class: 'region-open', 'data-testid': 'result-round' }, r.roundLost ? t('roundLost') : won ? t('roundNext', { n: node.round + 2 }) : t('roundKeep', { n: node.round + 1 })) : null,
       // Compartir da algo jugable (§12.3): 3 nitros, una vez por carrera.
       h('div', { class: 'win-share' },
-        h('button', { class: 'btn block', 'data-testid': 'result-share', onclick: () => shareNode(loose ? 't' + node.race.seed : node.id) },
+        h('button', { class: 'btn block', 'data-testid': 'result-share', onclick: () => shareNode(loose ? 't' + node.race.seed + '.' + node.round : node.id) },
           h('span', { class: 'ic', html: IC.share }), t('challengeFriend')),
         !shared && !loose ? h('div', { class: 'share-hint', id: 'shareHint' }, already ? t('shareAlready') : t('shareToEarn')) : null),
       h('div', { class: 'win-actions' },
@@ -322,7 +331,8 @@ function showResult (node, shared, r) {
 // ---------- Compartir (§12.3): la misma carrera para el amigo, por #fragment ----------
 function shareNode (id) {
   shareNodeId = id;
-  // Una carrera del mapa viaja por su nombre (#r=n5); una pista al azar, por su semilla (#t=…).
+  // Una carrera del mapa viaja por su nombre (#r=n5); una ronda del sin fin, por su semilla y
+  // su ronda (#t=<semilla>.<ronda>).
   shareEl.url = location.origin + location.pathname + (id[0] === 't' ? '#t=' + id.slice(1) : '#r=' + id);
   shareEl.text = t('shareText');
   shareEl.lang = getLang();
@@ -362,11 +372,12 @@ function renderGarage () {
   const rows = UPGRADES.map(key => {
     const lvl = progress.up[key];
     const price = upgradePrice(lvl);
-    const maxed = lvl >= MAX_UP;
-    const can = !maxed && money >= price;
-    const reason = maxed ? t('maxed') : money < price ? t('notEnough', { n: fmtMoney(price - money) }) : '';
-    const pips = h('div', { class: 'pips', 'aria-label': t('level', { n: lvl, m: MAX_UP }) });
-    for (let k = 0; k < MAX_UP; k++) pips.append(h('i', { class: k < lvl ? 'on' : '' }));
+    // Sin tope: cada nivel cuesta más y suma lo mismo. Se enseñan hasta 8 marcas y el número.
+    const can = money >= price;
+    const reason = money < price ? t('notEnough', { n: fmtMoney(price - money) }) : '';
+    const pips = h('div', { class: 'pips', 'aria-label': t('level', { n: lvl }) });
+    for (let k = 0; k < Math.max(8, lvl); k++) pips.append(h('i', { class: k < lvl ? 'on' : '' }));
+    pips.append(h('span', { class: 'lvl' }, t('level', { n: lvl })));
     return h('div', { class: 'up-row', 'data-testid': 'up-' + key },
       h('div', { class: 'up-txt' }, h('b', {}, t(key)), h('span', { class: 'muted' }, t(key + 'Help')), pips),
       buyBtn(key, price, can, reason, () => {
@@ -404,10 +415,10 @@ function sharedNodeFromHash () {
   return m && nodeById(m[1]) ? m[1] : null;
 }
 function consumeHash () {
-  const seed = /(?:^#|[#&])t=(\d{1,10})/.exec(location.hash || '');
+  const seed = /(?:^#|[#&])t=(\d{1,10})(?:\.(\d{1,4}))?/.exec(location.hash || '');
   if (seed && Number(seed[1]) > 0) {
     history.replaceState(history.state, '', location.pathname + location.search);
-    startRandom(Number(seed[1]));
+    startRandom(Number(seed[1]), seed[2] != null ? Number(seed[2]) : undefined);
     return true;
   }
   const id = sharedNodeFromHash();
@@ -425,6 +436,7 @@ function consumeHash () {
       progress = {
         nodes: saved.nodes || {}, money: saved.money ?? START.money, nitro: saved.nitro ?? START.nitro,
         up: { ...START.up, ...(saved.up || {}) },
+        endless: { round: saved.endless?.round || 0, best: saved.endless?.best || 0 },
       };
     }
   } catch (e) {

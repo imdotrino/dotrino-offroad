@@ -240,6 +240,7 @@ body.mode-race dotrino-topbar { display: none; }
 .pips { display: flex; gap: 4px; margin-top: 2px; }
 .pips i { width: 18px; height: 7px; border-radius: 2px; background: var(--border); }
 .pips i.on { background: var(--accent); }
+.pips .lvl { font-size: 11px; color: var(--muted); margin-left: 4px; }
 .btn.buy { flex: none; min-width: 124px; font-variant-numeric: tabular-nums; font-size: .84rem; }
 
 /* En horizontal los mandos caen sobre la pista: se quedan igual de grandes para el dedo, pero

@@ -126,29 +126,37 @@ export function followingNodeId (progress, id) {
 }
 
 /**
- * Una carrera suelta en una pista por piezas: cada semilla es una pista distinta, sin fin.
- * Los rivales salen al nivel del jugador. No da estrellas; sí premio.
+ * El modo SIN FIN: una carrera por ronda en una pista por piezas (cada semilla es una pista
+ * distinta). Los rivales salen por DELANTE del taller del jugador, y cada ronda más: el
+ * taller no tiene tope, pero la dificultad sube en mayor proporción. El podio pasa de ronda;
+ * el 4.º puesto vuelve a la primera. No da estrellas; sí premio, que crece con la ronda.
  */
-export function randomNode (seed, up) {
-  const s = seed >>> 0;
-  const ri = s % REGIONS.length, reg = REGIONS[ri];
+export const ENDLESS_LEAD = 1.15;    // los rivales van un 15 % por delante del taller…
+export const ENDLESS_STEP = 0.45;    // …y cada ronda suma esto (una mejora cuesta 40.000 + 30.000·nivel)
+export function randomNode (seed, up, round = 0) {
+  const s = seed >>> 0, r = Math.max(0, round | 0);
+  // Las primeras rondas recorren las regiones en orden (cada una con más obstáculos); después
+  // la decide la semilla.
+  const ri = r < 8 ? Math.min(REGIONS.length - 1, r >> 1) : s % REGIONS.length, reg = REGIONS[ri];
   const level = (up.tires + up.shocks + up.accel + up.speed) / 4;
+  const rivalLevel = level * ENDLESS_LEAD + r * ENDLESS_STEP;
   return {
-    id: 't' + s, type: 'random', region: ri, label: 0, requires: [], gate: 0,
-    prizeRegion: Math.min(REGIONS.length - 1, Math.floor(level / 1.5)),
+    id: 't' + s, type: 'random', region: ri, round: r, label: 0, requires: [], gate: 0,
+    prizeRegion: Math.min(REGIONS.length - 1, r >> 1),
+    skill: Math.min(0.99, 0.9 + r * 0.006),
     race: {
       layout: undefined, size: 3 + (s >>> 3) % 5, reversed: !!((s >>> 2) & 1), seed: s,
-      bumps: reg.bumps, ...OBSTACLES[reg.key],
-      hills: reg.hills, ramps: reg.ramps, grip: reg.grip, laps: 3, level, boss: false,
+      bumps: reg.bumps + (r >> 2), ...OBSTACLES[reg.key],
+      hills: reg.hills, ramps: reg.ramps, grip: reg.grip, laps: 3, level: rivalLevel, boss: false,
     },
   };
 }
-/** Premio de una carrera suelta: la mitad del de una carrera del mapa de tu nivel. */
-export const randomPrize = (node, place) => Math.round(prizeFor({ region: node.prizeRegion, type: 'normal' }, place) / 2000) * 1000;
+/** Premio de una ronda sin fin: la mitad del de una carrera del mapa, y un 35 % más por ronda. */
+export const randomPrize = (node, place) => Math.round(([0, 100000, 60000, 35000, 10000][place] || 0) * 0.5 * (1 + 0.35 * node.round) / 1000) * 1000;
 
 // --- Economía ---
 export const UPGRADES = ['tires', 'shocks', 'accel', 'speed'];
-export const MAX_UP = 6;
+// Las mejoras no tienen tope: cada nivel cuesta más (upgradePrice) y suma lo mismo.
 export const NITRO_PRICE = 8000;
 export const START = { money: 60000, nitro: 5, up: { tires: 0, shocks: 0, accel: 0, speed: 0 } };
 
@@ -165,15 +173,19 @@ export const cashPickupValue = (node) => 5000 * (node.region + 1);
 /** Los tres rivales de una carrera. El jefe corre de negro y casi no falla. */
 export function rivalsFor (node) {
   const L = node.race.level;
-  const lv = (x) => Math.max(0, Math.min(6.5, x));
+  const endless = node.type === 'random';
+  // En el campeonato las máquinas tienen techo; en el sin fin, no.
+  const lv = (x) => Math.max(0, endless ? x : Math.min(6.5, x));
   const up = (x) => ({ tires: lv(x), shocks: lv(x), accel: lv(x), speed: lv(x) });
   // La primera carrera es para aprender a manejar, y la primera región va con calma.
-  const ease = node.id === 'n0' ? 0.09 : node.region === 0 && !node.race.boss ? 0.04 : 0;
+  const ease = node.id === 'n0' ? 0.09 : node.region === 0 && !node.race.boss && !endless ? 0.04 : 0;
+  const base = endless ? node.skill : 0.94;
+  const nitro = endless ? 1 + (node.round >> 1) : node.region;
   return [
-    { ai: true, color: 'blue', up: up(L - 0.5), skill: 0.93 - ease, nitro: 1 + node.region },
-    { ai: true, color: 'yellow', up: up(L), skill: 0.94 - ease, nitro: 2 + node.region },
+    { ai: true, color: 'blue', up: up(L - 0.5), skill: base - 0.01 - ease, nitro: 1 + nitro },
+    { ai: true, color: 'yellow', up: up(L), skill: base - ease, nitro: 2 + nitro },
     node.race.boss
-      ? { ai: true, color: 'black', boss: true, up: up(L + 0.7), skill: 0.98, nitro: 4 + node.region }
-      : { ai: true, color: 'white', up: up(L + 0.4), skill: 0.95 - ease, nitro: 2 + node.region },
+      ? { ai: true, color: 'black', boss: true, up: up(L + 0.7), skill: 0.98, nitro: 4 + nitro }
+      : { ai: true, color: 'white', up: up(L + 0.4), skill: base + 0.01 - ease, nitro: 2 + nitro },
   ];
 }

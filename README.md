@@ -21,8 +21,13 @@ propios. PWA instalable, **funciona sin conexión**.
 - **Mapa de 24 carreras** (CONVENCIONES §12): cuatro regiones (desierto, bosque, nieve,
   volcán) con caminos que se bifurcan y un jefe al final de cada una. Las estrellas (3 por
   ganar, 2 por el segundo puesto, 1 por el tercero) abren jefes y regiones.
-- **Pista al azar**: una pista nueva cada vez, sin fin, con rivales a tu nivel. Da premio, no
-  estrellas, y se comparte por su semilla (`#t=<semilla>`).
+- **Sin fin**: una pista nueva en cada ronda. Los rivales salen un 15 % por delante del
+  taller del jugador y cada ronda suman 0,45 niveles, sin techo (`ENDLESS_LEAD`,
+  `ENDLESS_STEP` en `levels.js`); el taller tampoco tiene tope, pero cada nivel cuesta más
+  (40.000 + 30.000·nivel) y el premio crece solo un 35 % por ronda, así que la dificultad sube
+  en mayor proporción que las mejoras. El podio pasa de ronda; el 4.º puesto devuelve a la
+  primera (se guarda la mejor). Da premio, no estrellas, y se comparte por semilla y ronda
+  (`#t=<semilla>.<ronda>`).
 - **Reta a un amigo**: cada carrera es determinista y se comparte por enlace (`#r=<carrera>`).
   Compartir da 3 nitros, una vez por carrera.
 - **Giro analógico**: en táctil, un volante (cuanto más lejos del centro, más gira), el pedal
