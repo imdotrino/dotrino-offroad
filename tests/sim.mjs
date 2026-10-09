@@ -142,6 +142,18 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
   assert.ok(closest >= r.r + 2.9, `truck went through a rock (${closest.toFixed(1)} < ${(r.r + 3).toFixed(1)})`);
 }
 
+// 2d. Niveles: un tramo entero queda en alto (con su valla), y del corte se sale volando.
+{
+  const track = buildTrack({ layout: 6, seed: 5, bumps: 0, puddles: 0, rocks: 0, mounds: 0, whoops: 0, hills: 0, ramps: 0, levels: 1 });
+  assert.equal(track.levels.length, 1);
+  const l = track.levels[0], mid = track.samples[l.a + Math.floor(l.len * 0.7)];
+  assert.ok(Math.abs(distAt(track, mid.x, mid.y)) < 14);
+  const hMid = track.height[Math.round(mid.y) * W + Math.round(mid.x)];
+  assert.ok(hMid > l.h * 0.9, `plateau should be at its level (${hMid.toFixed(1)} of ${l.h.toFixed(1)})`);
+  const before = track.samples[l.a - 6];
+  assert.ok(track.height[Math.round(before.y) * W + Math.round(before.x)] < 1, 'ground before the level must be flat');
+}
+
 // 3. Determinista: misma semilla, mismo resultado.
 const a = run(allNodes()[3], 1), b = run(allNodes()[3], 1);
 assert.equal(a.steps, b.steps);

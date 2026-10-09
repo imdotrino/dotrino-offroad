@@ -19,10 +19,10 @@ const REGIONS = [
 
 // Obstáculos por región: cada una añade más que la anterior.
 const OBSTACLES = {
-  desert: { rocks: 3, mounds: 3, whoops: 1, puddles: 3 },
-  forest: { rocks: 4, mounds: 3, whoops: 1, puddles: 5 },
-  snow: { rocks: 4, mounds: 4, whoops: 2, puddles: 4 },
-  volcano: { rocks: 6, mounds: 4, whoops: 2, puddles: 6 },
+  desert: { levels: 1, rocks: 3, mounds: 3, whoops: 1, puddles: 3 },
+  forest: { levels: 1, rocks: 4, mounds: 3, whoops: 1, puddles: 5 },
+  snow: { levels: 2, rocks: 4, mounds: 4, whoops: 2, puddles: 4 },
+  volcano: { levels: 2, rocks: 6, mounds: 4, whoops: 2, puddles: 6 },
 };
 
 const seedFor = (idx) => (200003 + idx * 7919) >>> 0;

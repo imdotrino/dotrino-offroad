@@ -10,6 +10,7 @@ export const H = 354;
 export const HALF = 38;        // medio ancho de la pista: MUY ancha, seis camionetas a la par
 export const RAMP_LEN = 10;    // largo de una rampa, en muestras
 export const RAMP_H = 15;      // alto del borde de una rampa
+const LEVEL_RAMP = 10;         // largo de la cuesta de un nivel, en muestras
 const STEP = 4;                // separación entre muestras del eje
 const FX = 52, FY = 54, FW = W - 104, FH = H - 108;   // área útil para los puntos de control
 
@@ -299,7 +300,7 @@ function buildField (s, poly) {
 
 /**
  * Construye una pista.
- * @param {{layout?:number, size?:number, cross?:number, chicane?:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, whoops?:number, mounds?:number, rocks?:number}} spec
+ * @param {{layout?:number, size?:number, cross?:number, chicane?:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, whoops?:number, mounds?:number, rocks?:number, levels?:number}} spec
  */
 export function buildTrack (spec) {
   // Con `layout`, uno de los trazados dibujados a mano; sin él, una pista por piezas de su semilla.
@@ -402,14 +403,41 @@ export function buildTrack (spec) {
     for (const q of hills) { const c = circ(q.i, i) / q.s; e += q.h * Math.exp(-c * c / 2); }
     elev[i] = e;
   }
+  // NIVELES: tramos enteros de pista a otra altura (mesetas). Se sube por una cuesta y se sale
+  // por otra cuesta o por un corte, del que se cae volando. A diferencia de las lomas, sube el
+  // tramo entero, con sus vallas, y por fuera queda un talud.
+  const levels = [];
+  for (let tries = 0; tries < 300 && levels.length < (spec.levels ?? 1); tries++) {
+    const a = 22 + Math.floor(rand() * Math.max(1, n - 100)), len = 24 + Math.floor(rand() * 30);
+    if (a + len + LEVEL_RAMP > n - 12) continue;
+    let free = true;
+    for (let i = a - 12; i <= a + len + LEVEL_RAMP + 12; i += 3) if (nearCross((i + n) % n, 10) || onRamp((i + n) % n, 4)) { free = false; break; }
+    if (!free || levels.some(l => a < l.a + l.len + 34 && l.a < a + len + 34)) continue;
+    levels.push({ a, len, h: 14 + rand() * 6, drop: rand() < 0.6 });
+  }
+  const sm = (u) => { u = u < 0 ? 0 : u > 1 ? 1 : u; return u * u * (3 - 2 * u); };
+  const level = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    for (const l of levels) {
+      const c = i - l.a;
+      if (c < 0 || c > l.len + LEVEL_RAMP) continue;
+      level[i] += l.h * (c <= l.len ? sm(c / LEVEL_RAMP) : l.drop ? 0 : 1 - sm((c - l.len) / LEVEL_RAMP));
+    }
+  }
+
   const height = new Float32Array(W * H);
   for (let k = 0; k < W * H; k++) {
     const d = field[k] - HALF;
+    if (d < 8 && levels.length) {
+      const f = near[k], i0 = Math.floor(f) % n, i1 = (i0 + 1) % n, t = f - Math.floor(f);
+      height[k] = (level[i0] + (level[i1] - level[i0]) * t) * (d < 4 ? 1 : 1 - (d - 4) / 4);
+    }
     // El relieve es de la pista y muere antes de llegar a la valla: así las vallas quedan
     // rectas y a nivel, y el terreno de fuera, limpio.
     let fall = Math.max(0, Math.min(1, (-d - 2) / 9));
     fall = fall * fall * (3 - 2 * fall);
     if (!fall) continue;
+    const base = height[k];
     const f = near[k], i0 = Math.floor(f) % n, i1 = (i0 + 1) % n, t = f - Math.floor(f);
     let hk = elev[i0] + (elev[i1] - elev[i0]) * t;
     if (d < 0 && mounds.length) {
@@ -421,7 +449,7 @@ export function buildTrack (spec) {
         hk += m.h * Math.exp(-(c * c + l * l) / 2);
       }
     }
-    height[k] = hk * fall;
+    height[k] = base + hk * fall;
   }
   // Suavizado: en el interior de una curva muchos puntos caen en muestras distintas y la
   // altura sale a rayas; dos pasadas de promedio las borran.
@@ -462,8 +490,8 @@ export function buildTrack (spec) {
     rocks.push(r);
   }
 
-  return { spec, name: layout.name, samples, n, field, near, height, bumps, ramps, hills, puddles, whoops, mounds, rocks, half: HALF,
-    crossed: !!layout.pts.crossed, chicanes: layout.pts.chicanes || 0 };
+  return { spec, name: layout.name, samples, n, field, near, height, bumps, ramps, hills, puddles, whoops, mounds, rocks, levels, level, half: HALF,
+    crossed: !!(/** @type {any} */ (layout.pts)).crossed, chicanes: (/** @type {any} */ (layout.pts)).chicanes || 0 };
 }
 
 function sample (f, x, y, out) {

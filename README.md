@@ -39,8 +39,13 @@ Analítica: GoatCounter sin cookies, autohospedado, solo en producción.
 
 ## Desarrollo
 
-Vite sin framework. Resolución interna 384×240, todo dibujado por código (sin imágenes): el mundo es un
-plano con alturas que `render.js` proyecta en perspectiva oblicua.
+Vite sin framework. Resolución interna 456×240, todo dibujado por código (sin imágenes): el mundo es un plano con
+alturas que `render.js` proyecta en **perspectiva caballera** (lo ancho tal cual, el fondo
+aplastado y corrido a la derecha, la altura hacia arriba), como las máquinas de antes.
+
+La pista tiene **varios niveles**: además de lomas, montículos y rampas, hay tramos enteros en
+alto (mesetas, con su valla y su talud), a los que se sube por una cuesta y de los que se sale
+por otra o por un corte del que se cae volando.
 
 ```bash
 npm install
@@ -54,7 +59,7 @@ npm run test:e2e   # Playwright sobre el build
 | `src/track.js` | Trazados, muestreo del eje, campo de distancias y alturas (lógica pura) |
 | `src/sim.js` | Física (agarre, altura y saltos, choques), rivales, premios en pista (lógica pura y determinista) |
 | `src/levels.js` | Mapa, estrellas, premios y precios |
-| `src/render.js` | Proyección oblicua: terreno con relieve y camionetas modeladas con cubitos |
+| `src/render.js` | Perspectiva caballera: terreno con relieve y camionetas modeladas con cubitos |
 | `src/race.js` | Pantalla de carrera: bucle, mandos y marcador |
 | `src/main.js` | Mapa, taller, resultado y compartir |
 

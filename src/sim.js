@@ -193,9 +193,11 @@ function stepTruck (race, tr, input, dt) {
   const g = heightAt(track, tr.x, tr.y);
   if (!tr.air) {
     const rate = (g - tr.g) / dt;
-    if (tr.rate > 10 && tr.rate - rate > 4.5 && speed > 30) {
+    // Despega cuando el suelo queda por debajo de por donde seguiría volando: el borde de una
+    // rampa (venía subiendo y sale disparada) o el corte de una meseta (sale recta y cae).
+    if (tr.g + tr.rate * dt - g > 0.12 && speed > 20) {
       tr.air = true; tr.airT = 0;
-      tr.alt = tr.g; tr.vz = Math.min(VZ_MAX, tr.rate * LAUNCH);
+      tr.alt = tr.g; tr.vz = Math.min(VZ_MAX, tr.rate > 0 ? tr.rate * LAUNCH : tr.rate);
       race.events.push({ type: 'jump', k: tr.k });
     } else { tr.alt = g; tr.rate = rate; }
   }
