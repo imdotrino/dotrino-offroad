@@ -104,7 +104,9 @@ test('en un teléfono: pista a lo ancho, pedales debajo y volante analógico', a
   const w = await page.getByTestId('wheel').boundingBox()
   const cx = w.x + w.width / 2, cy = w.y + w.height / 2
   expect(w.width * w.height).toBeGreaterThan(2 * 168 * 150)      // la zona del volante, el doble que la primera
-  expect(w.x + w.width).toBeLessThan((await page.getByTestId('pad-brake').boundingBox()).x)
+  await expect(page.getByTestId('pad-brake')).toHaveCount(0)
+  expect((await page.getByTestId('pad-gas').boundingBox()).width).toBeGreaterThan(100)
+  expect(w.x + w.width).toBeLessThan((await page.getByTestId('pad-gas').boundingBox()).x)
   const steerAt = async (dx) => {
     await page.getByTestId('wheel').dispatchEvent('pointermove', { pointerId: 1, clientX: cx + dx, clientY: cy })
     await page.waitForTimeout(80)

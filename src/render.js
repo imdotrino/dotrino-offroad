@@ -16,13 +16,13 @@ const WALL_H = 4;
 export const screenY = (y, z) => y * KY - z * KZ + OFF;
 
 export const PALETTES = {
-  desert: { out: [216, 172, 104], out2: [202, 156, 90], track: [152, 106, 62], track2: [140, 96, 54],
+  desert: { rock: [150, 132, 112], out: [216, 172, 104], out2: [202, 156, 90], track: [152, 106, 62], track2: [140, 96, 54],
     wallA: [222, 58, 48], wallB: [240, 240, 232], mud: [92, 62, 38], mudHi: [124, 90, 58], dust: '#d9b98a', deco: 'cactus' },
-  forest: { out: [72, 130, 64], out2: [60, 114, 56], track: [130, 94, 58], track2: [116, 82, 50],
+  forest: { rock: [122, 92, 60], out: [72, 130, 64], out2: [60, 114, 56], track: [130, 94, 58], track2: [116, 82, 50],
     wallA: [240, 200, 60], wallB: [58, 58, 68], mud: [70, 48, 30], mudHi: [100, 72, 48], dust: '#b89a70', deco: 'bush' },
-  snow: { out: [228, 236, 246], out2: [208, 220, 236], track: [152, 154, 168], track2: [140, 142, 156],
+  snow: { rock: [150, 190, 226], out: [228, 236, 246], out2: [208, 220, 236], track: [152, 154, 168], track2: [140, 142, 156],
     wallA: [58, 118, 222], wallB: [250, 250, 250], mud: [118, 170, 212], mudHi: [184, 218, 242], dust: '#ffffff', deco: 'pine' },
-  volcano: { out: [46, 36, 50], out2: [58, 44, 60], track: [108, 90, 96], track2: [96, 78, 86],
+  volcano: { rock: [84, 66, 74], out: [46, 36, 50], out2: [58, 44, 60], track: [108, 90, 96], track2: [96, 78, 86],
     wallA: [250, 140, 40], wallB: [38, 32, 38], mud: [232, 92, 30], mudHi: [255, 196, 72], dust: '#9a8088', deco: 'rock' },
 };
 
@@ -122,6 +122,19 @@ export function paintTrack (track, regionKey) {
     }
   }
 
+  // Rocas: se pintan en el suelo y se levantan al proyectar (como las vallas).
+  const rise = new Float32Array(W * H);
+  for (const r of track.rocks) {
+    for (let y = Math.max(0, (r.y - r.r) | 0); y <= Math.min(H - 1, (r.y + r.r + 1) | 0); y++) {
+      for (let x = Math.max(0, (r.x - r.r) | 0); x <= Math.min(W - 1, (r.x + r.r + 1) | 0); x++) {
+        const dx = x - r.x, dy = y - r.y, dd = Math.hypot(dx, dy) / r.r;
+        if (dd > 1) continue;
+        rise[y * W + x] = 2 + 6 * Math.sqrt(1 - dd * dd);
+        set(x, y, pal.rock, (dx + dy < -r.r * 0.3 ? 1.28 : dx + dy > r.r * 0.6 ? 0.7 : 1) * (hash(x, y) < 0.2 ? 0.86 : 1));
+      }
+    }
+  }
+
   // 2) Luz: lo que mira al noroeste se aclara y lo que le da la espalda se oscurece. Es lo
   //    que hace que una loma se lea como loma.
   const hg = track.height;
@@ -147,10 +160,10 @@ export function paintTrack (track, regionKey) {
       const i = y * W + x;
       const d = track.field[i] - half;
       const wall = d >= -1 && d < 3;
-      const sy = Math.round(screenY(y, hg[i] + (wall ? WALL_H : 0)));
+      const sy = Math.round(screenY(y, hg[i] + (wall ? WALL_H : rise[i])));
       if (sy >= minY) continue;
       // Enseñan cara frontal la valla y los cortes (el borde de una rampa); una ladera se estira sin más.
-      const tall = minY - sy > 1 && (wall || (y < H - 1 && hg[i] - hg[i + W] > 1.5));
+      const tall = minY - sy > 1 && (wall || rise[i] > 0 || (y < H - 1 && hg[i] - hg[i + W] > 1.5));
       for (let r = Math.max(0, sy); r < minY; r++) {
         const o = (r * SW + x) * 4, k = tall && r > sy ? 0.62 : 1;
         out[o] = px[i * 4] * k; out[o + 1] = px[i * 4 + 1] * k; out[o + 2] = px[i * 4 + 2] * k; out[o + 3] = 255;

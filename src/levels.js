@@ -17,6 +17,14 @@ const REGIONS = [
     rows: [[0, 0], [7, 0], [5, 0], [1, 0], [2, 1], [5, 1]] },
 ];
 
+// Obstáculos por región: cada una añade más que la anterior.
+const OBSTACLES = {
+  desert: { rocks: 3, mounds: 3, whoops: 1, puddles: 3 },
+  forest: { rocks: 4, mounds: 3, whoops: 1, puddles: 5 },
+  snow: { rocks: 4, mounds: 4, whoops: 2, puddles: 4 },
+  volcano: { rocks: 6, mounds: 4, whoops: 2, puddles: 6 },
+};
+
 const seedFor = (idx) => (200003 + idx * 7919) >>> 0;
 
 function build () {
@@ -31,7 +39,7 @@ function build () {
       label: boss ? 0 : depth + 1,
       race: {
         layout, reversed: !!reversed, seed: seedFor(idx),
-        bumps: reg.bumps + (boss ? 1 : 0), puddles: reg.puddles + (boss ? 1 : 0),
+        bumps: reg.bumps + (boss ? 1 : 0), ...OBSTACLES[reg.key],
         hills: reg.hills, ramps: reg.ramps, grip: reg.grip, laps: boss ? 4 : 3,
         // Nivel de las máquinas (escala 0..6 de las mejoras).
         level: ri * 1.4 + depth * 0.35 + (boss ? 1.1 : 0),

@@ -128,7 +128,6 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
     h('div', { class: 'pads-l' }, wheel),
     h('div', { class: 'pads-r' },
       pad('nitro', 'N', 'nitro', t('nitro')),
-      pad('brake', t('brake'), 'pedal brake', t('brake')),
       pad('gas', t('gas'), 'pedal gas', t('gas'))),
   );
 
@@ -151,7 +150,7 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
   // de sus esquinas.
   function layout () {
     const portrait = stage.clientHeight > stage.clientWidth * 1.1;
-    const vw = stage.clientWidth, vh = stage.clientHeight - hud.offsetHeight - (touch && portrait ? 240 : 0);
+    const vw = stage.clientWidth, vh = stage.clientHeight - hud.offsetHeight - (touch && portrait ? 252 : 0);
     const s = Math.min(vw / W, vh / H);
     wrap.style.width = cv.style.width = W * s + 'px';
     wrap.style.height = cv.style.height = H * s + 'px';

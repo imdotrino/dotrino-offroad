@@ -12,7 +12,8 @@ propios. PWA instalable, **funciona sin conexión**.
 ## Qué tiene
 
 - **Cuatro camionetas por carrera**: tú contra tres llevadas por la máquina, en una pista
-  muy ancha (76 px: caben seis camionetas a la par). **Rampas** con saltos largos, lomas, cuestas, charcos que te frenan, y nitros y bolsas
+  muy ancha (76 px: caben seis camionetas a la par). **Rampas** con saltos largos, **rocas** que hay que rodear, montículos, ondulado, lomas,
+  cuestas, charcos que te frenan, y nitros y bolsas
   de dinero que aparecen en la pista. Las camionetas chocan entre sí (caja de choque de medio
   dibujo: se solapan al rozarse, rebotan y saltan chispas).
 - **Taller** entre carreras: llantas, amortiguadores, aceleración, velocidad y nitros, con el
@@ -22,8 +23,8 @@ propios. PWA instalable, **funciona sin conexión**.
   ganar, 2 por el segundo puesto, 1 por el tercero) abren jefes y regiones.
 - **Reta a un amigo**: cada carrera es determinista y se comparte por enlace (`#r=<carrera>`).
   Compartir da 3 nitros, una vez por carrera.
-- **Giro analógico**: en táctil, un volante (cuanto más lejos del centro, más gira) y pedales
-  de gas y freno; mando de juego (palanca izquierda, gatillos, X nitro); y teclado (← → girar,
+- **Giro analógico**: en táctil, un volante (cuanto más lejos del centro, más gira), el pedal
+  de gas y el botón de nitro; mando de juego (palanca izquierda, gatillos, X nitro); y teclado (← → girar,
   ↑ acelerar, ↓ frenar, Espacio nitro), que gira el volante poco a poco. En un teléfono se ve
   más grande en horizontal.
 - Bilingüe es/en.
@@ -55,7 +56,11 @@ npm run test:e2e   # Playwright sobre el build
 | `src/race.js` | Pantalla de carrera: bucle, mandos y marcador |
 | `src/main.js` | Mapa, taller, resultado y compartir |
 
-Añadir una pista: un trazado nuevo en `LAYOUTS` (`src/track.js`), con el primer tramo recto,
+Trazados (`LAYOUTS`): frijol, ocho, peine, martillo, triángulo, reloj de arena, óvalo y bota;
+cada uno también en sentido contrario. Son polígonos: los lados salen rectos y las esquinas,
+arcos de círculo.
+
+Añadir una pista: un polígono nuevo en `LAYOUTS` (`src/track.js`); el primer lado lleva la salida,
 y `npm test` comprueba que la máquina lo completa.
 
 Licencia MIT.

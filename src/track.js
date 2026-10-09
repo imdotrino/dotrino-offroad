@@ -13,18 +13,19 @@ export const RAMP_H = 15;      // alto del borde de una rampa
 const STEP = 4;                // separación entre muestras del eje
 const FX = 52, FY = 54, FW = W - 104, FH = H - 108;   // área útil para los puntos de control
 
-// Trazados dibujados a mano en el cuadro unidad. El primer tramo (p0→p1) es SIEMPRE una
-// recta: ahí va la salida.
+// Trazados: POLÍGONOS en el cuadro unidad. Cada tramo es una recta de verdad y cada esquina
+// un arco de círculo (roundedLoop), como una pista real. El primer lado (p0→p1) lleva la salida.
 export const LAYOUTS = [
-  { name: 'bean', pts: [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.76, 1], [0.5, 0.62], [0.24, 1], [0, 1], [0, 0.5]] },
-  { name: 'eight', pts: [[1, 1], [1, 0.5], [1, 0], [0.64, 0], [0.36, 1], [0, 1], [0, 0.5], [0, 0], [0.36, 0], [0.64, 1]] },
-  { name: 'comb', pts: [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.67, 1], [0.67, 0.5], [0.33, 0.5], [0.33, 1], [0, 1], [0, 0.5]] },
-  { name: 'hammer', pts: [[0, 0], [0.5, 0], [1, 0], [1, 0.42], [0.72, 0.46], [0.72, 1], [0.28, 1], [0.28, 0.46], [0, 0.42]] },
-  { name: 'triangle', pts: [[0, 0], [0.5, 0], [1, 0], [0.76, 0.52], [0.5, 1], [0.24, 0.52]] },
-  { name: 'hourglass', pts: [[0, 0], [0.5, 0], [1, 0], [1, 0.36], [0, 0.64], [0, 1], [0.5, 1], [1, 1], [1, 0.64], [0, 0.36]] },
-  { name: 'oval', pts: [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.5, 1], [0, 1], [0, 0.5]] },
-  { name: 'boot', pts: [[0.75, 1], [0.25, 1], [0, 1], [0, 0.5], [0, 0], [0.26, 0], [0.52, 0], [0.52, 0.5], [1, 0.5], [1, 1]] },
+  { name: 'bean', pts: [[0, 0], [1, 0], [1, 1], [0.72, 1], [0.5, 0.6], [0.28, 1], [0, 1]] },
+  { name: 'eight', pts: [[1, 1], [1, 0], [0.64, 0], [0.36, 1], [0, 1], [0, 0], [0.36, 0], [0.64, 1]] },
+  { name: 'comb', pts: [[0, 0], [1, 0], [1, 1], [0.67, 1], [0.67, 0.5], [0.33, 0.5], [0.33, 1], [0, 1]] },
+  { name: 'hammer', pts: [[0, 0], [1, 0], [1, 0.42], [0.72, 0.42], [0.72, 1], [0.28, 1], [0.28, 0.42], [0, 0.42]] },
+  { name: 'triangle', pts: [[0, 0], [1, 0], [0.5, 1]] },
+  { name: 'hourglass', pts: [[0, 0], [1, 0], [1, 0.36], [0, 0.64], [0, 1], [1, 1], [1, 0.64], [0, 0.36]] },
+  { name: 'oval', pts: [[0, 0], [1, 0], [1, 1], [0, 1]] },
+  { name: 'boot', pts: [[1, 1], [0, 1], [0, 0], [0.52, 0], [0.52, 0.5], [1, 0.5]] },
 ];
+const CORNER_R = 60;           // radio de las curvas (se achica solo si el lado es corto)
 
 /** PRNG determinista (mulberry32). */
 export function rng (seed) {
@@ -38,25 +39,40 @@ export function rng (seed) {
   };
 }
 
-function catmull (p0, p1, p2, p3, t) {
-  const t2 = t * t, t3 = t2 * t;
-  return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+/** El polígono con las esquinas redondeadas, como lista densa de puntos. Empieza a media recta del primer lado. */
+function roundedLoop (pts) {
+  const n = pts.length;
+  const corners = pts.map((B, i) => {
+    const A = pts[(i + n - 1) % n], C = pts[(i + 1) % n];
+    const ul = Math.hypot(A[0] - B[0], A[1] - B[1]), vl = Math.hypot(C[0] - B[0], C[1] - B[1]);
+    const u = [(A[0] - B[0]) / ul, (A[1] - B[1]) / ul], v = [(C[0] - B[0]) / vl, (C[1] - B[1]) / vl];
+    const th = Math.acos(Math.max(-1, Math.min(1, u[0] * v[0] + u[1] * v[1])));
+    if (th > Math.PI - 0.05) return { p1: B, p2: B, arc: null };
+    const tan = Math.tan(th / 2);
+    const t = Math.min(CORNER_R / tan, 0.47 * Math.min(ul, vl)), r = t * tan;
+    const bl = Math.hypot(u[0] + v[0], u[1] + v[1]), cd = r / Math.sin(th / 2);
+    return {
+      p1: [B[0] + u[0] * t, B[1] + u[1] * t], p2: [B[0] + v[0] * t, B[1] + v[1] * t],
+      arc: { c: [B[0] + (u[0] + v[0]) / bl * cd, B[1] + (u[1] + v[1]) / bl * cd], r },
+    };
+  });
+  const out = [[(corners[0].p2[0] + corners[1].p1[0]) / 2, (corners[0].p2[1] + corners[1].p1[1]) / 2]];
+  for (let k = 1; k <= n; k++) {
+    const c = corners[k % n];
+    out.push(c.p1);
+    if (!c.arc) continue;
+    const a1 = Math.atan2(c.p1[1] - c.arc.c[1], c.p1[0] - c.arc.c[0]);
+    let d = Math.atan2(c.p2[1] - c.arc.c[1], c.p2[0] - c.arc.c[0]) - a1;
+    while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+    const steps = Math.max(4, Math.ceil(Math.abs(d) * c.arc.r / 2));
+    for (let q = 1; q <= steps; q++) out.push([c.arc.c[0] + Math.cos(a1 + d * q / steps) * c.arc.r, c.arc.c[1] + Math.sin(a1 + d * q / steps) * c.arc.r]);
+  }
+  return out;
 }
 
 /** Muestras del eje, equiespaciadas por longitud de arco. La muestra 0 es la línea de salida. */
 function sampleLoop (pts) {
-  const n = pts.length;
-  const fine = [];
-  for (let i = 0; i < n; i++) {
-    const p0 = pts[(i + n - 1) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
-    for (let k = 0; k < 40; k++) {
-      const t = k / 40;
-      // La salida cae a media recta del primer tramo: el bucle arranca ahí.
-      fine.push([catmull(p0[0], p1[0], p2[0], p3[0], t), catmull(p0[1], p1[1], p2[1], p3[1], t)]);
-    }
-  }
-  const startAt = 20;   // mitad del tramo p0→p1
-  const loop = fine.slice(startAt).concat(fine.slice(0, startAt));
+  const loop = roundedLoop(pts);
   // Longitudes acumuladas
   const acc = [0];
   for (let i = 0; i < loop.length; i++) {
@@ -118,7 +134,7 @@ function buildField (s) {
 
 /**
  * Construye una pista.
- * @param {{layout:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number}} spec
+ * @param {{layout:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, whoops?:number, mounds?:number, rocks?:number}} spec
  */
 export function buildTrack (spec) {
   const layout = LAYOUTS[spec.layout % LAYOUTS.length];
@@ -188,12 +204,29 @@ export function buildTrack (spec) {
     hills.push({ i, h: 13 + rand() * 6, s: 8 + rand() * 3 });
   }
 
+  const straightAt = (i, len) => { for (let o = 0; o <= len; o++) if (samples[(i + o) % n].curv > 0.25) return false; return true; };
+  // Ondulado: tres resaltos seguidos.
+  const whoops = [];
+  for (let tries = 0; tries < 300 && whoops.length < (spec.whoops ?? 1); tries++) {
+    const i = 16 + Math.floor(rand() * (n - 44));
+    if (!straightAt(i, 12) || nearCross(i, 12) || onRamp(i, 16) || bumps.some(b => circ(b, i) < 18) || hills.some(q => circ(q.i, i) < 16) || whoops.some(w => circ(w, i) < 30)) continue;
+    whoops.push(i);
+  }
+  // Montículos: no ocupan todo el ancho; el que lo pisa salta, el que lo esquiva no.
+  const mounds = [];
+  for (let tries = 0; tries < 300 && mounds.length < (spec.mounds ?? 2); tries++) {
+    const i = 16 + Math.floor(rand() * (n - 32));
+    if (nearCross(i, 10) || onRamp(i, 10) || bumps.some(b => circ(b, i) < 8) || whoops.some(w => circ(w + 5, i) < 12) || mounds.some(m => circ(m.i, i) < 14)) continue;
+    mounds.push({ i, lat: (rand() < 0.5 ? -1 : 1) * (8 + rand() * 18), h: 5 + rand() * 2 });
+  }
+
   // Perfil de alturas a lo largo del eje, y de ahí la altura de cada punto del mundo: la de
   // su tramo, que se va aplanando al alejarse de la pista.
   const elev = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     let e = 0;
     for (const b of bumps) { const c = circ(b, i) / 1.4; e += 4.5 * Math.exp(-c * c / 2); }
+    for (const w of whoops) for (let k = 0; k < 3; k++) { const c = circ((w + k * 5) % n, i) / 1.1; e += 3.4 * Math.exp(-c * c / 2); }
     for (const r of ramps) {
       const c = (r - i + n) % n;                       // muestras que faltan para el borde
       if (c <= RAMP_LEN) { const u = 1 - c / RAMP_LEN; e += RAMP_H * u * u * (3 - 2 * u) * 0.35 + RAMP_H * u * 0.65; }
@@ -208,7 +241,17 @@ export function buildTrack (spec) {
     fall = fall * fall * (3 - 2 * fall);
     if (!fall) continue;
     const f = near[k], i0 = Math.floor(f) % n, i1 = (i0 + 1) % n, t = f - Math.floor(f);
-    height[k] = (elev[i0] + (elev[i1] - elev[i0]) * t) * fall;
+    let hk = elev[i0] + (elev[i1] - elev[i0]) * t;
+    if (d < 0 && mounds.length) {
+      const q = samples[i0], x = k % W, y = (k / W) | 0;
+      const lat = -(x - q.x) * q.ty + (y - q.y) * q.tx;
+      for (const m of mounds) {
+        let c = Math.abs(f - m.i); c = Math.min(c, n - c) / 1.7;
+        const l = (lat - m.lat) / 8;
+        hk += m.h * Math.exp(-(c * c + l * l) / 2);
+      }
+    }
+    height[k] = hk * fall;
   }
   // Suavizado: en el interior de una curva muchos puntos caen en muestras distintas y la
   // altura sale a rayas; dos pasadas de promedio las borran.
@@ -236,7 +279,18 @@ export function buildTrack (spec) {
     puddles.push(p);
   }
 
-  return { spec, name: layout.name, samples, n, field, near, height, bumps, ramps, hills, puddles, half: HALF };
+  // Rocas: obstáculos SÓLIDOS a un lado del eje. Se rodean (o se saltan desde una rampa).
+  const rocks = [];
+  for (let tries = 0; tries < 400 && rocks.length < (spec.rocks ?? 2); tries++) {
+    const i = 18 + Math.floor(rand() * (n - 30));
+    if (nearCross(i, 8) || onRamp(i, 4)) continue;
+    const q = samples[i], lat = (rand() < 0.5 ? -1 : 1) * (6 + rand() * 22);
+    const r = { x: q.x - q.ty * lat, y: q.y + q.tx * lat, r: 4.5 + rand() * 1.5, i, lat };
+    if (rocks.some(o => Math.hypot(o.x - r.x, o.y - r.y) < 44) || puddles.some(o => Math.hypot(o.x - r.x, o.y - r.y) < o.r + 12)) continue;
+    rocks.push(r);
+  }
+
+  return { spec, name: layout.name, samples, n, field, near, height, bumps, ramps, hills, puddles, whoops, mounds, rocks, half: HALF };
 }
 
 function sample (f, x, y, out) {

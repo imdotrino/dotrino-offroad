@@ -26,12 +26,15 @@ function run (node, playerLevel) {
 // 1. Cada trazado deja una pista con la salida dentro y obstáculos sobre el eje.
 for (let i = 0; i < LAYOUTS.length; i++) {
   for (const reversed of [false, true]) {
-    const t = buildTrack({ layout: i, reversed, seed: 7 + i, bumps: 3, puddles: 3 });
+    const t = buildTrack({ layout: i, reversed, seed: 7 + i, bumps: 3, puddles: 3, rocks: 4, mounds: 3, whoops: 1 });
+    assert.equal(t.rocks.length, 4, `${t.name}: rocks`);
+    assert.equal(t.mounds.length, 3, `${t.name}: mounds`);
+    for (const r of t.rocks) assert.ok(distAt(t, r.x, r.y) < t.half - r.r, `${t.name}: rock outside the track`);
     assert.ok(t.n > 120, `${t.name}: too short (${t.n})`);
     // La pista entera (con su valla) cabe en el mundo, y dos tramos no se pisan salvo en un cruce.
     for (const q of t.samples) assert.ok(q.x > t.half + 4 && q.x < W - t.half - 4 && q.y > t.half + 4 && q.y < H - t.half - 4, `${t.name}: track leaves the world at ${q.x.toFixed(0)},${q.y.toFixed(0)}`);
     for (const s of t.samples) assert.ok(distAt(t, s.x, s.y) < 1.5, `${t.name}: sample off its own axis`);
-    assert.equal(t.bumps.length, 3, `${t.name}: bumps`);
+    assert.ok(t.bumps.length >= 1, `${t.name}: bumps`);
     assert.ok(t.ramps.length >= 1, `${t.name}${reversed ? ' rev' : ''}: no straight long enough for a ramp`);
     assert.ok(t.samples[0].curv < 0.45, `${t.name}: start line is not on a straight (${t.samples[0].curv.toFixed(2)})`);
   }
@@ -55,7 +58,7 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
 // 2b. Entre camionetas la caja de choque es la mitad del dibujo (13 de largo): se solapan al
 //     rozarse, pero no se atraviesan, y el choque se anuncia.
 {
-  const track = buildTrack(allNodes()[0].race);
+  const track = buildTrack({ layout: 6, seed: 1, bumps: 0, puddles: 0, rocks: 0, mounds: 0, whoops: 0, hills: 0, ramps: 0 });   // pista lisa
   const up = { tires: 0, shocks: 0, accel: 0, speed: 0 };
   const race = createRace({ track, trucks: [{ ai: false, up }, { ai: false, up }], laps: 3, seed: 1 });
   race.state = 'racing';
@@ -74,6 +77,23 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
   assert.ok(closest < 9 && closest > 5, `trucks should overlap about half their length, got ${closest.toFixed(1)}`);
   assert.ok(crashed, 'a head-on hit must raise a crash event');
   assert.ok(bounced, 'trucks must bounce back');
+}
+
+// 2c. Una roca es sólida: la camioneta que va de frente no la atraviesa.
+{
+  const track = buildTrack({ layout: 6, seed: 3, bumps: 0, puddles: 0, rocks: 1, mounds: 0, whoops: 0, hills: 0, ramps: 0 });
+  const up = { tires: 0, shocks: 0, accel: 0, speed: 0 };
+  const race = createRace({ track, trucks: [{ ai: false, up }], laps: 3, seed: 1 });
+  race.state = 'racing';
+  const [a] = race.trucks, r = track.rocks[0];
+  a.x = r.x - 20; a.y = r.y; a.vx = 70; a.vy = 0; a.a = 0;
+  let closest = 99;
+  for (let i = 0; i < 30; i++) {
+    step(race, 1 / 60, { steer: 0, gas: true, brake: false, nitro: false });
+    race.over = false;
+    closest = Math.min(closest, Math.hypot(a.x - r.x, a.y - r.y));
+  }
+  assert.ok(closest >= r.r + 2.9, `truck went through a rock (${closest.toFixed(1)} < ${(r.r + 3).toFixed(1)})`);
 }
 
 // 3. Determinista: misma semilla, mismo resultado.

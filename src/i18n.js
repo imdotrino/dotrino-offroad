@@ -20,7 +20,7 @@ const DICT = {
     pause: 'Pausa', paused: 'En pausa', resume: 'Seguir', restart: 'Reiniciar carrera',
     exitRace: 'Salir de la carrera', soundOn: 'Sonido: activado', soundOff: 'Sonido: apagado',
     gas: 'GAS', brake: 'FRENO', nitro: 'Nitro', wheel: 'Volante',
-    helpKeys: '← → girar · ↑ acelerar · ↓ frenar · Espacio nitro',
+    helpKeys: '← → girar · ↑ acelerar · ↓ frenar · Espacio nitro · rodea las rocas',
     helpTouch: 'Desliza el volante a los lados · pedal GAS · N nitro',
     rotateHint: 'gira el teléfono para verla más grande',
 
@@ -64,7 +64,7 @@ const DICT = {
     pause: 'Pause', paused: 'Paused', resume: 'Resume', restart: 'Restart race',
     exitRace: 'Leave race', soundOn: 'Sound: on', soundOff: 'Sound: off',
     gas: 'GAS', brake: 'BRAKE', nitro: 'Nitro', wheel: 'Steering wheel',
-    helpKeys: '← → steer · ↑ gas · ↓ brake · Space nitro',
+    helpKeys: '← → steer · ↑ gas · ↓ brake · Space nitro · drive around the rocks',
     helpTouch: 'Slide the wheel sideways · GAS pedal · N nitro',
     rotateHint: 'turn your phone for a bigger view',
 

@@ -74,7 +74,14 @@ function aiControl (race, tr) {
   // La máquina no va clavada al eje: cambia de carril cada tanto.
   tr.laneT -= 1 / 60;
   if (tr.laneT <= 0) { tr.lane = (rand() * 2 - 1) * 22; tr.laneT = 1.5 + rand() * 2.5; }
-  const tx = tgt.x - tgt.ty * tr.lane, ty = tgt.y + tgt.tx * tr.lane;
+  // Si hay una roca cerca por delante y en su carril, se abre hacia el lado que le queda.
+  let lane = tr.lane;
+  for (const r of track.rocks) {
+    const ahead = (r.i - tr.idx + n) % n;
+    if (ahead > 0 && ahead < 16 && Math.abs(lane - r.lat) < 13) lane = r.lat + (lane >= r.lat ? 15 : -15);
+  }
+  lane = Math.max(-31, Math.min(31, lane));
+  const tx = tgt.x - tgt.ty * lane, ty = tgt.y + tgt.tx * lane;
   const diff = wrapAngle(Math.atan2(ty - tr.y, tx - tr.x) - tr.a);
   const steer = diff > 0.07 ? 1 : diff < -0.07 ? -1 : 0;
   // Frena si viene una curva cerrada y va rápido para ella: mira la más cerrada del tramo que viene.
@@ -148,6 +155,21 @@ function stepTruck (race, tr, input, dt) {
       tr.vx -= gx * vn * 1.25; tr.vy -= gy * vn * 1.25;
       tr.vx *= 0.9; tr.vy *= 0.9;
       if (vn > 25) race.events.push({ type: 'hit', k: tr.k });
+    }
+  }
+  // Rocas: sólidas, salvo que se pase volando por encima.
+  if (tr.z < 5) {
+    for (const r of track.rocks) {
+      const dx = tr.x - r.x, dy = tr.y - r.y, dd = Math.hypot(dx, dy), min = r.r + 3;
+      if (dd >= min || dd === 0) continue;
+      const nx = dx / dd, ny = dy / dd;
+      tr.x += nx * (min - dd); tr.y += ny * (min - dd);
+      const vn = tr.vx * nx + tr.vy * ny;
+      if (vn < 0) {
+        tr.vx -= nx * vn * 1.5; tr.vy -= ny * vn * 1.5;
+        tr.vx *= 0.8; tr.vy *= 0.8;
+        if (vn < -25) race.events.push({ type: 'hit', k: tr.k });
+      }
     }
   }
   tr.x = Math.max(2, Math.min(W - 3, tr.x)); tr.y = Math.max(2, Math.min(H - 3, tr.y));
