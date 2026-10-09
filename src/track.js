@@ -3,16 +3,18 @@
 // campo de distancias al eje (para las paredes) y sus obstáculos (lomas y charcos).
 // Todo sale de una semilla: el mismo nivel es la misma pista para todos (§12.1).
 
-export const W = 384;          // resolución interna (pixel art, pista entera en pantalla)
-export const H = 240;
+// El MUNDO es un plano (x, y) con una altura por punto. La pantalla lo ve en perspectiva
+// oblicua (render.js): por eso el mundo es más alto que la pantalla, que lo aplasta al dibujar.
+export const W = 384;
+export const H = 354;
 export const HALF = 13;        // medio ancho de la pista, en px
 const STEP = 4;                // separación entre muestras del eje
-const FX = 26, FY = 28, FW = W - 52, FH = H - 52;   // área útil para los puntos de control
+const FX = 26, FY = 30, FW = W - 52, FH = H - 58;   // área útil para los puntos de control
 
 // Trazados dibujados a mano en el cuadro unidad. El primer tramo (p0→p1) es SIEMPRE una
 // recta: ahí va la salida.
 export const LAYOUTS = [
-  { name: 'kidney', pts: [[0.1, 0.16], [0.5, 0.08], [0.9, 0.16], [0.92, 0.8], [0.64, 0.9], [0.5, 0.52], [0.36, 0.9], [0.08, 0.8]] },
+  { name: 'kidney', pts: [[0.14, 0.09], [0.56, 0.08], [0.9, 0.18], [0.92, 0.8], [0.64, 0.9], [0.5, 0.52], [0.36, 0.9], [0.08, 0.8]] },
   { name: 'eight', pts: [[0.9, 0.88], [0.9, 0.12], [0.62, 0.12], [0.38, 0.88], [0.1, 0.88], [0.1, 0.12], [0.38, 0.12], [0.62, 0.88]] },
   { name: 'snake', pts: [[0.08, 0.1], [0.92, 0.1], [0.92, 0.38], [0.3, 0.38], [0.3, 0.64], [0.92, 0.64], [0.92, 0.92], [0.08, 0.92]] },
   { name: 'crown', pts: [[0.08, 0.9], [0.08, 0.1], [0.32, 0.1], [0.5, 0.54], [0.68, 0.1], [0.92, 0.1], [0.92, 0.9], [0.5, 0.92]] },
@@ -87,13 +89,14 @@ function finishSamples (s) {
   }
 }
 
-/** Distancia de cada píxel al eje de la pista (Float32Array W×H). */
+/** Distancia de cada píxel al eje (`field`) y en qué punto del eje cae (`near`, muestra con decimales). */
 function buildField (s) {
   const n = s.length;
   const field = new Float32Array(W * H);
+  const near = new Float32Array(W * H);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      let best = 1e9;
+      let best = 1e9, bn = 0;
       for (let i = 0; i < n; i++) {
         const a = s[i], b = s[(i + 1) % n];
         const vx = b.x - a.x, vy = b.y - a.y;
@@ -102,17 +105,18 @@ function buildField (s) {
         t = t < 0 ? 0 : t > 1 ? 1 : t;
         const dx = wx - vx * t, dy = wy - vy * t;
         const d = dx * dx + dy * dy;
-        if (d < best) best = d;
+        if (d < best) { best = d; bn = i + t; }
       }
       field[y * W + x] = Math.sqrt(best);
+      near[y * W + x] = bn;
     }
   }
-  return field;
+  return { field, near };
 }
 
 /**
  * Construye una pista.
- * @param {{layout:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number}} spec
+ * @param {{layout:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number}} spec
  */
 export function buildTrack (spec) {
   const layout = LAYOUTS[spec.layout % LAYOUTS.length];
@@ -122,26 +126,75 @@ export function buildTrack (spec) {
   const samples = sampleLoop(pts);
   finishSamples(samples);
   const n = samples.length;
-  const field = buildField(samples);
+  const { field, near } = buildField(samples);
   const rand = rng(spec.seed);
 
   // Lomas: en tramos rectos, lejos de la salida y separadas entre sí.
+  const circ = (a, b) => Math.min(Math.abs(a - b), n - Math.abs(a - b));
+  // Cruces (el ocho, la espiral): ahí el suelo es de dos tramos a la vez, así que va plano.
+  const cross = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 17; j < n; j++) {
+      if (circ(i, j) > 16 && Math.hypot(samples[i].x - samples[j].x, samples[i].y - samples[j].y) < HALF * 2.6) { cross.push(i, j); }
+    }
+  }
+  const nearCross = (i, m) => cross.some(c => circ(c, i) < m);
   const bumps = [];
   const wantBumps = spec.bumps ?? 3;
   for (let tries = 0; tries < 200 && bumps.length < wantBumps; tries++) {
     const i = 14 + Math.floor(rand() * (n - 28));
-    if (samples[i].curv > 0.25) continue;
-    if (bumps.some(b => Math.min(Math.abs(b - i), n - Math.abs(b - i)) < 18)) continue;
+    if (samples[i].curv > 0.25 || nearCross(i, 6)) continue;
+    if (bumps.some(b => circ(b, i) < 18)) continue;
     bumps.push(i);
   }
   bumps.sort((a, b) => a - b);
+
+  // Cuestas: subidas largas y suaves. Frenan al subir y lanzan al bajar.
+  const hills = [];
+  const wantHills = spec.hills ?? 1;
+  for (let tries = 0; tries < 200 && hills.length < wantHills; tries++) {
+    const i = 20 + Math.floor(rand() * (n - 40));
+    if (nearCross(i, 16) || bumps.some(b => circ(b, i) < 14) || hills.some(q => circ(q.i, i) < 40)) continue;
+    hills.push({ i, h: 13 + rand() * 6, s: 8 + rand() * 3 });
+  }
+
+  // Perfil de alturas a lo largo del eje, y de ahí la altura de cada punto del mundo: la de
+  // su tramo, que se va aplanando al alejarse de la pista.
+  const elev = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let e = 0;
+    for (const b of bumps) { const c = circ(b, i) / 1.4; e += 6 * Math.exp(-c * c / 2); }
+    for (const q of hills) { const c = circ(q.i, i) / q.s; e += q.h * Math.exp(-c * c / 2); }
+    elev[i] = e;
+  }
+  const height = new Float32Array(W * H);
+  for (let k = 0; k < W * H; k++) {
+    const d = field[k] - HALF;
+    let fall = d < 3 ? 1 : Math.max(0, 1 - (d - 3) / 16);
+    fall = fall * fall * (3 - 2 * fall);
+    if (!fall) continue;
+    const f = near[k], i0 = Math.floor(f) % n, i1 = (i0 + 1) % n, t = f - Math.floor(f);
+    height[k] = (elev[i0] + (elev[i1] - elev[i0]) * t) * fall;
+  }
+  // Suavizado: en el interior de una curva muchos puntos caen en muestras distintas y la
+  // altura sale a rayas; dos pasadas de promedio las borran.
+  const tmp = new Float32Array(W * H);
+  for (let pass = 0; pass < 2; pass++) {
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const k = y * W + x;
+        tmp[k] = (height[k - W - 1] + height[k - W] + height[k - W + 1] + height[k - 1] + height[k] + height[k + 1] + height[k + W - 1] + height[k + W] + height[k + W + 1]) / 9;
+      }
+    }
+    height.set(tmp);
+  }
 
   // Charcos: círculos a un lado del eje (se pueden esquivar).
   const puddles = [];
   const wantPuddles = spec.puddles ?? 2;
   for (let tries = 0; tries < 200 && puddles.length < wantPuddles; tries++) {
     const i = 14 + Math.floor(rand() * (n - 28));
-    if (bumps.some(b => Math.min(Math.abs(b - i), n - Math.abs(b - i)) < 6)) continue;
+    if (bumps.some(b => circ(b, i) < 6)) continue;
     const s = samples[i];
     const side = (rand() < 0.5 ? -1 : 1) * (2 + rand() * 4);
     const p = { x: s.x - s.ty * side, y: s.y + s.tx * side, r: 5 + rand() * 2.5, i };
@@ -149,15 +202,18 @@ export function buildTrack (spec) {
     puddles.push(p);
   }
 
-  return { spec, name: layout.name, samples, n, field, bumps, puddles, half: HALF };
+  return { spec, name: layout.name, samples, n, field, height, bumps, hills, puddles, half: HALF };
 }
 
-/** Distancia al eje en un punto cualquiera (bilineal sobre el campo). Fuera del cuadro: lejos. */
-export function distAt (track, x, y) {
-  if (x < 0 || y < 0 || x >= W - 1 || y >= H - 1) return 999;
+function sample (f, x, y, out) {
+  if (x < 0 || y < 0 || x >= W - 1 || y >= H - 1) return out;
   const x0 = x | 0, y0 = y | 0, fx = x - x0, fy = y - y0;
-  const f = track.field, i = y0 * W + x0;
+  const i = y0 * W + x0;
   const a = f[i] + (f[i + 1] - f[i]) * fx;
   const b = f[i + W] + (f[i + W + 1] - f[i + W]) * fx;
   return a + (b - a) * fy;
 }
+/** Distancia al eje en un punto cualquiera (bilineal sobre el campo). Fuera del cuadro: lejos. */
+export const distAt = (track, x, y) => sample(track.field, x, y, 999);
+/** Altura del suelo en un punto cualquiera. */
+export const heightAt = (track, x, y) => sample(track.height, x, y, 0);

@@ -2,7 +2,8 @@
 
 > **Parte del ecosistema [Dotrino](https://dotrino.com).** Dotrino es un ecosistema de aplicaciones centradas en la privacidad de los datos: tu información es tuya, y las decisiones sobre ella también — qué compartes, con quién, cuándo y por qué. Sin anuncios, sin cookies, sin rastreo de datos, sin vender tu identidad a nadie.
 
-Carreras de camionetas todoterreno en pixel art, con **la pista entera en pantalla**, en la
+Carreras de camionetas todoterreno en pixel art, con **la pista entera en pantalla** y vista
+en perspectiva (lomas, cuestas y vallas con relieve), en la
 línea de las máquinas de carreras de tierra de finales de los 80. Gráficos, pistas y código
 propios. PWA instalable, **funciona sin conexión**.
 
@@ -20,7 +21,7 @@ propios. PWA instalable, **funciona sin conexión**.
 - **Reta a un amigo**: cada carrera es determinista y se comparte por enlace (`#r=<carrera>`).
   Compartir da 3 nitros, una vez por carrera.
 - Teclado (← → girar, ↑ acelerar, ↓ frenar, Espacio nitro) y mandos táctiles. En un teléfono
-  en vertical la pista se gira para ocupar la pantalla.
+  se ve más grande en horizontal.
 - Bilingüe es/en.
 
 ## Privacidad
@@ -31,7 +32,8 @@ Analítica: GoatCounter sin cookies, autohospedado, solo en producción.
 
 ## Desarrollo
 
-Vite sin framework. Resolución interna 384×240, todo dibujado por código (sin imágenes).
+Vite sin framework. Resolución interna 384×240, todo dibujado por código (sin imágenes): el mundo es un
+plano con alturas que `render.js` proyecta en perspectiva oblicua.
 
 ```bash
 npm install
@@ -42,10 +44,10 @@ npm run test:e2e   # Playwright sobre el build
 
 | Archivo | Qué hace |
 |---|---|
-| `src/track.js` | Trazados, muestreo del eje y campo de distancias (lógica pura) |
+| `src/track.js` | Trazados, muestreo del eje, campo de distancias y alturas (lógica pura) |
 | `src/sim.js` | Física, rivales, premios en pista (lógica pura y determinista) |
 | `src/levels.js` | Mapa, estrellas, premios y precios |
-| `src/render.js` | Terreno y camionetas en pixel art |
+| `src/render.js` | Proyección oblicua: terreno con relieve y camionetas modeladas con cubitos |
 | `src/race.js` | Pantalla de carrera: bucle, mandos y marcador |
 | `src/main.js` | Mapa, taller, resultado y compartir |
 

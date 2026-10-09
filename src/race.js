@@ -2,9 +2,9 @@
 // paso fijo (sim.js); aquí solo se leen los mandos, se dibuja y se suena.
 import { h } from './dom.js';
 import { t } from './i18n.js';
-import { W, H, buildTrack } from './track.js';
+import { buildTrack } from './track.js';
 import { createRace, step, livePlace } from './sim.js';
-import { paintTrack, drawRace, emitParticles, stepParticles, PALETTES } from './render.js';
+import { paintTrack, drawRace, emitParticles, stepParticles, PALETTES, SW as W, SH as H } from './render.js';
 import * as audio from './audio.js';
 
 const DT = 1 / 60;
@@ -94,26 +94,19 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
 
   const stage = h('div', { class: 'race-stage' + (touch ? ' touch' : '') }, hud, wrap, big, note, pads, menu);
   host.append(stage);
-  note.textContent = touch ? t('helpTouch') : t('helpKeys');
 
-  // ---------- Tamaño: la pista siempre entera. En vertical el lienzo va girado 90°. ----------
+  // ---------- Tamaño: la pista siempre entera y sin girar (la perspectiva tiene un "arriba"). ----------
+  // En vertical queda a lo ancho, con los mandos DEBAJO; en horizontal, los mandos van encima
+  // de sus esquinas.
   function layout () {
-    const vw = stage.clientWidth, vh = stage.clientHeight - hud.offsetHeight - (touch && vh0() ? 118 : 0);
-    const portrait = vh > vw * 1.1;
-    if (!portrait) {
-      const s = Math.min(vw / W, vh / H);
-      wrap.style.width = W * s + 'px'; wrap.style.height = H * s + 'px';
-      cv.style.width = W * s + 'px'; cv.style.height = H * s + 'px'; cv.style.transform = 'none';
-    } else {
-      const s = Math.min(vw / H, vh / W);
-      wrap.style.width = H * s + 'px'; wrap.style.height = W * s + 'px';
-      cv.style.width = W * s + 'px'; cv.style.height = H * s + 'px';
-      cv.style.transform = `translateX(${H * s}px) rotate(90deg)`;
-    }
+    const portrait = stage.clientHeight > stage.clientWidth * 1.1;
+    const vw = stage.clientWidth, vh = stage.clientHeight - hud.offsetHeight - (touch && portrait ? 118 : 0);
+    const s = Math.min(vw / W, vh / H);
+    wrap.style.width = cv.style.width = W * s + 'px';
+    wrap.style.height = cv.style.height = H * s + 'px';
     stage.classList.toggle('portrait', portrait);
+    if (!race || race.state === 'countdown') note.textContent = (touch ? t('helpTouch') : t('helpKeys')) + (touch && portrait ? ' · ' + t('rotateHint') : '');
   }
-  // En vertical los mandos van DEBAJO de la pista; en horizontal, encima de sus esquinas.
-  const vh0 = () => stage.clientHeight > stage.clientWidth * 1.1;
   window.addEventListener('resize', layout);
   layout();
 

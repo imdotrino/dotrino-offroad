@@ -22,6 +22,7 @@ const DICT = {
     gas: 'GAS', nitro: 'Nitro', steerLeft: 'Girar a la izquierda', steerRight: 'Girar a la derecha',
     helpKeys: '← → girar · ↑ acelerar · ↓ frenar · Espacio nitro',
     helpTouch: '◀ ▶ girar · GAS acelerar · N nitro',
+    rotateHint: 'gira el teléfono para verla más grande',
 
     // Resultado
     youFinished: 'Llegaste {p}', bossBeaten: '¡Jefe vencido!',
@@ -65,6 +66,7 @@ const DICT = {
     gas: 'GAS', nitro: 'Nitro', steerLeft: 'Steer left', steerRight: 'Steer right',
     helpKeys: '← → steer · ↑ gas · ↓ brake · Space nitro',
     helpTouch: '◀ ▶ steer · GAS to accelerate · N nitro',
+    rotateHint: 'turn your phone for a bigger view',
 
     youFinished: 'You finished {p}', bossBeaten: 'Boss beaten!',
     failed: 'You finished 4th: you need the podium to move on',

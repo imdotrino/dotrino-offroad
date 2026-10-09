@@ -86,14 +86,17 @@ test('un enlace compartido abre esa carrera sin tocar el avance', async ({ page 
   expect(p.nodes.n7).toBeUndefined()
 })
 
-test('en un teléfono en vertical la pista va girada y hay mandos táctiles', async ({ browser }) => {
+test('en un teléfono en vertical la pista cabe a lo ancho, sin girar, y hay mandos táctiles', async ({ browser }) => {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true })
   const page = await ctx.newPage()
   await open(page)
   await page.getByTestId('node-n0').tap()
   await expect(page.getByTestId('pad-gas')).toBeVisible()
   const box = await page.getByTestId('race-canvas').boundingBox()
-  expect(box.height).toBeGreaterThan(box.width)
+  expect(box.width).toBeGreaterThan(box.height)
+  expect(box.width).toBeGreaterThan(380)
+  const pad = await page.getByTestId('pad-gas').boundingBox()
+  expect(pad.y).toBeGreaterThan(box.y + box.height)
   expect(box.x).toBeGreaterThanOrEqual(-1)
   expect(box.x + box.width).toBeLessThanOrEqual(391)
   await ctx.close()

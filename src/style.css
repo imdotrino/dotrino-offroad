@@ -127,9 +127,11 @@ body.mode-race dotrino-topbar { display: none; }
   background: var(--surface); color: var(--text); font-size: .7rem;
 }
 .race-wrap { position: relative; margin: auto; flex: none; overflow: hidden; }
-.race-stage.portrait.touch .race-wrap { margin: 0 auto auto; }
+.race-stage.portrait .race-wrap { margin: 6vh auto auto; }
+.race-stage.portrait .race-big { top: 16%; }
+.race-stage.portrait .race-note { top: auto; bottom: 150px; }
 .race-canvas {
-  position: absolute; left: 0; top: 0; transform-origin: 0 0; display: block;
+  position: absolute; left: 0; top: 0; display: block;
   image-rendering: pixelated; image-rendering: crisp-edges;
 }
 .race-big {

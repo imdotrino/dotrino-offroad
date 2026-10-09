@@ -1,18 +1,19 @@
 // Simulación de la carrera: lógica PURA y determinista (sin DOM ni reloj). La pantalla
 // (race.js) le pasa los mandos del jugador y dibuja el estado; tests/sim.mjs la corre sola.
-import { rng, distAt, W, H } from './track.js';
+import { rng, distAt, heightAt, W, H } from './track.js';
 
 export const MAX_LEVEL = 6;
 const TRUCK_R = 4;          // radio de choque de una camioneta
 const GRAVITY = 260;
 const NITRO_TIME = 0.75;
 const TURN_RATE = 3.1;
+const SLOPE = 55;            // cuánto frena una subida (y empuja una bajada)
 
 /** Prestaciones de una camioneta según sus niveles de mejora (0..6, admite decimales). */
 export function statsFor (up) {
   return {
-    accel: 58 + up.accel * 12,
-    top: 66 + up.speed * 8,
+    accel: 64 + up.accel * 12,
+    top: 72 + up.speed * 8,
     grip: 8.5 + up.tires * 2,
     shocks: up.shocks,
     tires: up.tires,
@@ -118,6 +119,8 @@ function stepTruck (race, tr, input, dt) {
     } else {
       vf -= vf * (tr.finished ? 2.6 : 1.5) * dt;
     }
+    // Cuestas: la pendiente bajo la camioneta, en el sentido en que mira.
+    vf -= (heightAt(track, tr.x + fx * 2, tr.y + fy * 2) - heightAt(track, tr.x - fx * 2, tr.y - fy * 2)) / 4 * SLOPE * dt;
     const grip = st.grip * race.grip * (tr.mud ? 0.6 : 1);
     vl *= Math.exp(-grip * dt);
   }

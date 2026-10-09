@@ -7,13 +7,13 @@
 // Región: terreno, agarre, obstáculos y puertas de estrellas (entrar / jefe).
 // `rows` son las seis carreras [entrada, izq1, der1, izq2, der2, jefe] como [trazado, alRevés].
 const REGIONS = [
-  { key: 'desert', grip: 1, bumps: 2, puddles: 1, gate: 0, bossGate: 6,
+  { key: 'desert', hills: 1, grip: 1, bumps: 2, puddles: 1, gate: 0, bossGate: 6,
     rows: [[6, 0], [0, 0], [3, 0], [4, 0], [2, 0], [1, 0]] },
-  { key: 'forest', grip: 0.95, bumps: 3, puddles: 3, gate: 9, bossGate: 20,
+  { key: 'forest', hills: 1, grip: 0.95, bumps: 3, puddles: 3, gate: 9, bossGate: 20,
     rows: [[3, 1], [5, 0], [7, 0], [0, 1], [6, 1], [2, 1]] },
-  { key: 'snow', grip: 0.7, bumps: 3, puddles: 2, gate: 24, bossGate: 38,
+  { key: 'snow', hills: 2, grip: 0.7, bumps: 3, puddles: 2, gate: 24, bossGate: 38,
     rows: [[4, 1], [1, 1], [2, 0], [7, 1], [5, 1], [3, 0]] },
-  { key: 'volcano', grip: 0.9, bumps: 4, puddles: 4, gate: 44, bossGate: 60,
+  { key: 'volcano', hills: 2, grip: 0.9, bumps: 4, puddles: 4, gate: 44, bossGate: 60,
     rows: [[0, 0], [7, 0], [5, 0], [1, 0], [2, 1], [5, 1]] },
 ];
 
@@ -32,7 +32,7 @@ function build () {
       race: {
         layout, reversed: !!reversed, seed: seedFor(idx),
         bumps: reg.bumps + (boss ? 1 : 0), puddles: reg.puddles + (boss ? 1 : 0),
-        grip: reg.grip, laps: boss ? 4 : 3,
+        hills: reg.hills, grip: reg.grip, laps: boss ? 4 : 3,
         // Nivel de las máquinas (escala 0..6 de las mejoras).
         level: ri * 1.4 + depth * 0.35 + (boss ? 1.1 : 0),
         boss,

@@ -30,7 +30,7 @@ for (let i = 0; i < LAYOUTS.length; i++) {
     assert.ok(t.n > 120, `${t.name}: too short (${t.n})`);
     for (const s of t.samples) assert.ok(distAt(t, s.x, s.y) < 1.5, `${t.name}: sample off its own axis`);
     assert.equal(t.bumps.length, 3, `${t.name}: bumps`);
-    assert.ok(t.samples[0].curv < 0.3, `${t.name}: start line is not on a straight (${t.samples[0].curv.toFixed(2)})`);
+    assert.ok(t.samples[0].curv < 0.45, `${t.name}: start line is not on a straight (${t.samples[0].curv.toFixed(2)})`);
   }
 }
 

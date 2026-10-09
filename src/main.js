@@ -363,7 +363,7 @@ function renderGarage () {
   clear(screen).append(
     h('div', { class: 'garage', 'data-testid': 'garage' },
       h('div', { class: 'garage-head' },
-        truckIcon(sprites, 'red', 5, 28),
+        truckIcon(sprites, 'red', 5, 3),
         h('div', {}, h('h2', {}, t('garageTitle')), h('div', { class: 'garage-money', 'data-testid': 'garage-money' }, fmtMoney(money))),
       ),
       ...rows,
