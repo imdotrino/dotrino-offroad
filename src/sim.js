@@ -51,6 +51,7 @@ export function createRace ({ track, trucks, laps, seed, grip = 1 }) {
       a: Math.atan2(s.ty, s.tx), vx: 0, vy: 0,
       // Altura: `g` suelo bajo la camioneta, `alt` la suya, `z` lo que vuela por encima.
       g: 0, alt: 0, z: 0, vz: 0, rate: 0, climb: 0, air: false, airT: 0, airMax: 0,
+      pitch: 0, roll: 0,
       idx: i, lap: -1, progress: i - n,
       nitro: t.nitro ?? 0, nitroT: 0, nitroHeld: false,
       mud: false, finished: false, finishT: 0, place: 0,
@@ -219,6 +220,22 @@ function stepTruck (race, tr, input, dt) {
     }
   }
   tr.g = g; tr.z = tr.alt - g;
+
+  // Inclinación: en el suelo la camioneta se acomoda a la normal del piso (cabeceo a lo largo
+  // del eje, balanceo entre las ruedas); en el aire levanta el morro al subir y lo baja al
+  // caer. Se sigue con suavidad, como lo haría la suspensión.
+  let pitchT, rollT;
+  if (!tr.air) {
+    const L = 5, Wd = 3;
+    pitchT = Math.atan((heightAt(track, tr.x + fx * L, tr.y + fy * L) - heightAt(track, tr.x - fx * L, tr.y - fy * L)) / (2 * L));
+    rollT = Math.atan((heightAt(track, tr.x - fy * Wd, tr.y + fx * Wd) - heightAt(track, tr.x + fy * Wd, tr.y - fx * Wd)) / (2 * Wd));
+  } else {
+    pitchT = Math.atan2(tr.vz, Math.max(20, speed)) * 0.5;
+    rollT = 0;
+  }
+  const follow = Math.min(1, dt * (tr.air ? 6 : 14));
+  tr.pitch += (pitchT - tr.pitch) * follow;
+  tr.roll += (rollT - tr.roll) * follow;
 
   // Avance por el eje: la muestra más cercana dentro de una ventana (así un cruce no confunde).
   const prev = tr.idx;

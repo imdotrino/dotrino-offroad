@@ -355,61 +355,95 @@ const LIGHT = [-0.5, -0.6, 0.62];   // de dónde viene la luz (noroeste, en alto
 
 const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
 
-function truckFrames (color) {
+const PALETTE = {};
+for (const color of Object.keys(TRUCK_COLORS)) {
   const B = rgb(TRUCK_COLORS[color].B);
-  const pal = [null, B, rgb(TRUCK_COLORS[color].D), rgb('#8fc8f4'), B.map(v => Math.min(255, v * 1.12 + 10)), rgb('#1b1b20'), rgb('#fff6b0')];
-  const frames = [];
+  PALETTE[color] = [null, B, rgb(TRUCK_COLORS[color].D), rgb('#8fc8f4'), B.map(v => Math.min(255, v * 1.12 + 10)), rgb('#1b1b20'), rgb('#fff6b0')];
+}
+
+/**
+ * Dibuja la camioneta girada `a` (rumbo), con el morro levantado `pitch` y ladeada `roll`
+ * (radianes; positivo = morro arriba / lado izquierdo arriba). Devuelve los píxeles del cuadro
+ * y, por píxel, la profundidad (y del mundo) para que el terreno la tape donde toca.
+ */
+function renderTruck (color, a, pitch, roll) {
+  const pal = PALETTE[color];
   const { h, c } = MODEL;
+  const out = new Uint8ClampedArray(SP * SP * 4), dy = new Float32Array(SP * SP);
+  const ca = Math.cos(a), sa = Math.sin(a), cp = Math.cos(pitch), sp = Math.sin(pitch), cr = Math.cos(roll), sr = Math.sin(roll);
+  // Un punto (o una normal) del modelo, en su sitio: balanceo, cabeceo y rumbo, en ese orden.
+  const turn = (lx, ly, lz) => {
+    const y1 = ly * cr - lz * sr, z1 = lz * cr + ly * sr;
+    const x2 = lx * cp - z1 * sp, z2 = z1 * cp + lx * sp;
+    return [x2 * ca - y1 * sa, x2 * sa + y1 * ca, z2];
+  };
+  // Cada celda, girada; del fondo al frente, para que lo de delante tape.
+  const cells = [];
+  for (let gy = 0; gy < MH; gy++) for (let gx = 0; gx < MW; gx++) {
+    const k = gy * MW + gx;
+    if (!c[k]) continue;
+    const lx = ((gx + 0.5) / MR - 6.5) * TS, ly = ((gy + 0.5) / MR - 3.5) * TS;
+    const nx0 = (h[k - (gx > 0 ? 1 : 0)] - h[k + (gx < MW - 1 ? 1 : 0)]) * MR / 2;
+    const ny0 = (h[k - (gy > 0 ? MW : 0)] - h[k + (gy < MH - 1 ? MW : 0)]) * MR / 2;
+    const nrm = turn(nx0, ny0, 1);
+    const lit = (nrm[0] * LIGHT[0] + nrm[1] * LIGHT[1] + nrm[2] * LIGHT[2]) / Math.hypot(nrm[0], nrm[1], nrm[2]);
+    const top = turn(lx, ly, h[k] * TS), base = turn(lx, ly, 0);
+    cells.push({ rx: top[0], ry: top[1], z: top[2], bz: base[2], by: base[1], c: c[k], lit });
+  }
+  cells.sort((p, q) => p.ry - q.ry);
+  const put = (x, y, col, k, ry) => {
+    if (x < 0 || y < 0 || x >= SP || y >= SP) return;
+    const o = (y * SP + x) * 4;
+    out[o] = Math.min(255, col[0] * k); out[o + 1] = Math.min(255, col[1] * k); out[o + 2] = Math.min(255, col[2] * k); out[o + 3] = 255;
+    dy[y * SP + x] = ry;
+  };
+  for (const d of cells) {
+    const x = Math.round(SP / 2 + d.rx - d.ry * SHEAR - 0.5);
+    const top = Math.round(AY + d.ry * KY - d.z * KZ), bottom = Math.round(AY + d.by * KY - d.bz * KZ);
+    const col = pal[d.c], k = 0.72 + 0.55 * Math.max(0, d.lit);
+    // Columna: desde su altura hasta su base (el costado, más oscuro), y la cara de arriba
+    // en un bloque de 2×2, para que entre dos celdas vecinas no asome el costado.
+    for (let y = top + 2; y <= bottom; y++) { put(x, y, col, 0.52, d.ry); put(x + 1, y, col, 0.52, d.ry); }
+    put(x, top, col, k, d.ry); put(x + 1, top, col, k, d.ry); put(x, top + 1, col, k, d.ry); put(x + 1, top + 1, col, k, d.ry);
+  }
+  return { pixels: out, dy };
+}
+
+const TILT_STEP = 0.09, TILT_MAX = Math.PI / 4;   // la inclinación se redondea a ~5° para la caché
+const tiltIdx = (r) => Math.round(Math.max(-TILT_MAX, Math.min(TILT_MAX, r)) / TILT_STEP);
+
+function truckFrames (color) {
+  const frames = [];
   for (let f = 0; f < FRAMES; f++) {
     const cv = document.createElement('canvas');
     cv.width = SP; cv.height = SP;
     const ctx = cv.getContext('2d');
-    const img = ctx.createImageData(SP, SP), out = img.data;
-    const a = (f / FRAMES) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
-    // Cada celda, girada; del fondo al frente, para que lo de delante tape.
-    const cells = [];
-    for (let gy = 0; gy < MH; gy++) for (let gx = 0; gx < MW; gx++) {
-      const k = gy * MW + gx;
-      if (!c[k]) continue;
-      const lx = ((gx + 0.5) / MR - 6.5) * TS, ly = ((gy + 0.5) / MR - 3.5) * TS;
-      // Normal del campo de alturas, girada con la camioneta.
-      const nx0 = (h[k - (gx > 0 ? 1 : 0)] - h[k + (gx < MW - 1 ? 1 : 0)]) * MR / 2;
-      const ny0 = (h[k - (gy > 0 ? MW : 0)] - h[k + (gy < MH - 1 ? MW : 0)]) * MR / 2;
-      const nx = nx0 * ca - ny0 * sa, ny = nx0 * sa + ny0 * ca;
-      const nl = Math.hypot(nx, ny, 1);
-      const lit = (nx * LIGHT[0] + ny * LIGHT[1] + LIGHT[2]) / nl;
-      cells.push({ rx: lx * ca - ly * sa, ry: lx * sa + ly * ca, z: h[k] * TS, c: c[k], lit });
-    }
-    cells.sort((p, q) => p.ry - q.ry);
-    const dy = new Float32Array(SP * SP);
-    const put = (x, y, col, k, ry) => {
-      if (x < 0 || y < 0 || x >= SP || y >= SP) return;
-      const o = (y * SP + x) * 4;
-      out[o] = Math.min(255, col[0] * k); out[o + 1] = Math.min(255, col[1] * k); out[o + 2] = Math.min(255, col[2] * k); out[o + 3] = 255;
-      dy[y * SP + x] = ry;
-    };
-    for (const d of cells) {
-      const x = Math.round(SP / 2 + d.rx - d.ry * SHEAR - 0.5), yb = AY + d.ry * KY, top = Math.round(yb - d.z * KZ);
-      const col = pal[d.c], k = 0.72 + 0.55 * Math.max(0, lit(d));
-      // Columna: desde su altura hasta el suelo (el costado, más oscuro), y la cara de arriba
-      // en un bloque de 2×2, para que entre dos celdas vecinas no asome el costado.
-      for (let y = top + 2; y <= Math.round(yb); y++) { put(x, y, col, 0.52, d.ry); put(x + 1, y, col, 0.52, d.ry); }
-      put(x, top, col, k, d.ry); put(x + 1, top, col, k, d.ry); put(x, top + 1, col, k, d.ry); put(x + 1, top + 1, col, k, d.ry);
-    }
+    const img = ctx.createImageData(SP, SP);
+    const r = renderTruck(color, (f / FRAMES) * Math.PI * 2, 0, 0);
+    img.data.set(r.pixels);
     ctx.putImageData(img, 0, 0);
-    cv.pixels = out;
-    cv.dy = dy;
+    cv.pixels = r.pixels;
+    cv.dy = r.dy;
     frames.push(cv);
   }
   return frames;
 }
-function lit (d) { return d.lit; }
 
 export function makeSprites () {
   const out = {};
   out.scratch = document.createElement('canvas');
   out.scratch.width = SP; out.scratch.height = SP;
   for (const color of Object.keys(TRUCK_COLORS)) out[color] = truckFrames(color);
+  // Cuadros inclinados, dibujados la primera vez que hacen falta y guardados.
+  const tilted = new Map();
+  out.tilted = (color, f, pitch, roll) => {
+    const pi = tiltIdx(pitch), ri = tiltIdx(roll);
+    if (!pi && !ri) return out[color][f];
+    const key = color + '|' + f + '|' + pi + '|' + ri;
+    let r = tilted.get(key);
+    if (!r) { r = renderTruck(color, (f / FRAMES) * Math.PI * 2, pi * TILT_STEP, ri * TILT_STEP); tilted.set(key, r); }
+    return r;
+  };
   // Sombra: la huella de la camioneta en el suelo, por ángulo.
   out.shadow = [];
   for (let f = 0; f < FRAMES; f++) {
@@ -478,7 +512,7 @@ export function drawRace (ctx, bg, race, sprites, fx, t) {
   const sctx = sprites.scratch.getContext('2d');
   const tmp = sctx.createImageData(SP, SP);
   for (const tr of order) {
-    const fr = sprites[tr.color][frameOf(tr)];
+    const fr = sprites.tilted(tr.color, frameOf(tr), tr.pitch || 0, tr.roll || 0);
     const x0 = left(tr), y0 = Math.round(screenY(tr.y, ground(tr.x, tr.y) + tr.z)) - AY;
     tmp.data.set(fr.pixels);
     for (let py = 0; py < SP; py++) {

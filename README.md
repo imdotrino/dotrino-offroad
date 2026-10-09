@@ -55,7 +55,10 @@ planos a 45°, y los obstáculos nunca se ponen donde cambia el piso. Obstáculo
 lomas, ondulado, rocas y charcos.
 
 Las camionetas son un campo de alturas con las aristas biseladas, iluminado por su normal
-(`truckModel`), girado en 32 ángulos.
+(`truckModel`), girado en 32 ángulos. Además se inclinan con la normal del piso (cabeceo a lo
+largo del eje y balanceo entre las ruedas, con la suavidad de una suspensión) y en el aire
+levantan el morro al subir y lo bajan al caer; los cuadros inclinados se dibujan la primera vez
+que hacen falta (`renderTruck`) y se guardan en caché a pasos de ~5°.
 
 Las sombras salen de las alturas (luz del noroeste): una valla, una roca, un talud o el borde
 de una rampa arrojan una sombra tan larga como altos son.
