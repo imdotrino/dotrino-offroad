@@ -130,15 +130,6 @@ export function paintTrack (track, regionKey) {
       if (c < 0.55) mul(k % W, (k / W) | 0, 1.35);
     }
   }
-  // Huecos: el fondo, de tierra removida y más oscura.
-  for (const pt of track.pits) {
-    for (let y = Math.max(0, (pt.y - pt.ry) | 0); y <= Math.min(H - 1, (pt.y + pt.ry) | 0); y++) {
-      for (let x = Math.max(0, (pt.x - pt.rx) | 0); x <= Math.min(W - 1, (pt.x + pt.rx) | 0); x++) {
-        const e = Math.hypot((x - pt.x) / pt.rx, (y - pt.y) / pt.ry);
-        if (e < 1) mul(x, y, e > 0.8 ? 0.78 : 0.62 + 0.1 * blotch(x, y, 3));
-      }
-    }
-  }
   // Charcos
   for (const p of track.puddles) {
     for (let y = Math.max(0, (p.y - p.r) | 0); y <= Math.min(H - 1, (p.y + p.r + 1) | 0); y++) {
@@ -203,6 +194,28 @@ export function paintTrack (track, regionKey) {
       const i = y * W + x;
       const k = 1 + Math.max(-0.5, Math.min(0.38, (hg[i - 1] - hg[i + 1]) * 0.2 + (hg[i - W] - hg[i + W]) * 0.32));
       if (k !== 1) mul(x, y, k);
+    }
+  }
+
+  // HUECOS, pintados a mano ENCIMA de la luz y las sombras, para que salgan nítidos como en la
+  // referencia: la mitad de atrás (la que da a la luz) en sombra dura, con el borde en una línea
+  // oscura; la de delante, el piso iluminado, con el labio claro. El corte entre las dos es una
+  // media luna, que es como se ve la sombra de un borde curvo.
+  for (const pt of track.pits) {
+    for (let y = Math.max(0, (pt.y - pt.ry - 1) | 0); y <= Math.min(H - 1, (pt.y + pt.ry + 1) | 0); y++) {
+      for (let x = Math.max(0, (pt.x - pt.rx - 1) | 0); x <= Math.min(W - 1, (pt.x + pt.rx + 1) | 0); x++) {
+        const nx = (x - pt.x) / pt.rx, ny = (y - pt.y) / pt.ry, e = Math.hypot(nx, ny);
+        if (e >= 1) continue;
+        const i = y * W + x;
+        const base = hash(x >> 1, y >> 1) < 0.5 ? pal.track : pal.track2;
+        const inShadow = ny < 0.22 * (1 - nx * nx) - 0.02;
+        let k;
+        if (e > 0.9 && ny < 0.3) k = 0.26;                 // la línea del borde de atrás
+        else if (inShadow) k = 0.42 + 0.04 * hash(x, y);    // la pared de atrás, en sombra
+        else if (e > 0.86) k = 1.22;                        // el labio de delante, a la luz
+        else k = 0.98 + 0.06 * blotch(x + 7, y + 3, 3);     // el piso
+        px[i * 4] = base[0] * k; px[i * 4 + 1] = base[1] * k; px[i * 4 + 2] = base[2] * k;
+      }
     }
   }
 
