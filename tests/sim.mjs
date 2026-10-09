@@ -209,6 +209,36 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
   console.log(`levels: ${high}/24 raised · ${twoFloors}/24 two floors · ${withDrop}/24 with a drop`);
 }
 
+// 2d'. PIEZAS QUE ENCAJAN: en todo el ancho de la pista (no solo en la trazada) el suelo de los
+// módulos no da ningún salto de más de 45° entre píxeles vecinos. Dos piezas solo se tocan
+// donde tienen la misma altura; si la pista pasa pegada a sí misma, los dos tramos van al mismo
+// piso. Se mide sin obstáculos, que son los únicos con paredes propias (rocas, hoyos).
+{
+  const noObstacles = { bumps: 0, pits: 0, rocks: 0, mounds: 0, whoops: 0, puddles: 0, hills: 0, ramps: 0 };
+  const specs = allNodes().map(nd => ({ id: nd.id, spec: { ...nd.race, ...noObstacles } }));
+  for (let seed = 1; seed <= 40; seed++) {
+    const nd = randomNode(seed * 7919, { tires: 0, shocks: 0, accel: 0, speed: 0 }, seed % 9);
+    specs.push({ id: 'random ' + seed, spec: { ...nd.race, ...noObstacles } });
+  }
+  for (const { id, spec } of specs) {
+    const t = buildTrack(spec);
+    let worst = 0;
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const k = y * W + x;
+      if (t.field[k] > t.half - 2) continue;
+      for (const j of [k + 1, k + W]) {
+        const step = Math.abs(t.height[k] - t.height[j]);
+        // Un borde declarado (muro con valla, pared para la física) sí puede saltar un piso.
+        if (step > 1.05 && (t.ledge[k] || t.ledge[j])) continue;
+        worst = Math.max(worst, step);
+      }
+    }
+    // 1.2 y no 1.0: donde la franja de una recta toca la cuña de un arco el redondeo a píxel
+    // mueve el final de la rampa un píxel; una pared de verdad es un piso entero (15).
+    assert.ok(worst <= 1.2, `${id}: a ${worst.toFixed(2)} px step across the track band (a wall between modules)`);
+  }
+}
+
 // 2e. Física de los huecos: se entra y se sale RODANDO, sin despegar; de una rampa sí se vuela.
 {
   const mk = (pits, ramps) => buildTrack({ seed: 9 * 104729, size: 5, maxLevel: 0, pits, rocks: 0, mounds: 0, bumps: 0, whoops: 0, hills: 0, ramps, puddles: 0 });

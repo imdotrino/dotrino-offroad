@@ -89,6 +89,22 @@ function aiControl (race, tr) {
     lane *= 0.5;
     tx = tgt.x - tgt.ty * lane; ty = tgt.y + tgt.tx * lane;
   }
+  // Si entre la camioneta y ese punto hay un muro entre pisos (la pista pasa pegada a sí
+  // misma a distinta altura), apunta más cerca, siguiendo su carril, hasta que no lo cruce.
+  const crossesLedge = (x1, y1, x2, y2) => {
+    const L = Math.hypot(x2 - x1, y2 - y1), steps = Math.max(1, Math.ceil(L / 3));
+    let prev = heightAt(track, x1, y1);
+    for (let q = 1; q <= steps; q++) {
+      const h = heightAt(track, x1 + (x2 - x1) * q / steps, y1 + (y2 - y1) * q / steps);
+      if (Math.abs(h - prev) > 3) return true;
+      prev = h;
+    }
+    return false;
+  };
+  for (let o = look - 2; o >= 2 && crossesLedge(tr.x, tr.y, tx, ty); o -= 2) {
+    const q = s[(tr.idx + o) % n];
+    tx = q.x - q.ty * lane; ty = q.y + q.tx * lane;
+  }
   const diff = wrapAngle(Math.atan2(ty - tr.y, tx - tr.x) - tr.a);
   let steer = Math.max(-1, Math.min(1, diff * 3.2));         // gira en proporción, como un volante
   // Y si aun así tiene una roca justo delante, la esquiva por el lado contrario.
@@ -155,7 +171,27 @@ function stepTruck (race, tr, input, dt) {
     vl *= Math.exp(-grip * dt);
   }
   tr.vx = fx * vf - fy * vl; tr.vy = fy * vf + fx * vl;
+  const px = tr.x, py = tr.y;
   tr.x += tr.vx * dt; tr.y += tr.vy * dt;
+
+  // Bordes entre piezas a distinto piso: un muro con valla. Rodando no se sube ni se baja por
+  // ahí (lo que es muro sube más de 52° respecto a lo avanzado; un desnivel de 45° no llega);
+  // se rebota como contra la valla de fuera. En el aire sí se puede caer encima del piso alto.
+  const moved = Math.hypot(tr.x - px, tr.y - py);
+  if (!tr.air && Math.abs(heightAt(track, tr.x, tr.y) - tr.g) > 1.3 * moved + 0.6) {
+    let gx = heightAt(track, px + 1, py) - heightAt(track, px - 1, py);
+    let gy = heightAt(track, px, py + 1) - heightAt(track, px, py - 1);
+    if (tr.g > heightAt(track, tr.x, tr.y)) { gx = -gx; gy = -gy; }      // desde arriba, el muro está hacia abajo
+    const gl = Math.hypot(gx, gy) || 1; gx /= gl; gy /= gl;
+    const vn = tr.vx * gx + tr.vy * gy;
+    // Solo si va CONTRA el muro: si se aleja (acaba de caer justo en el borde) se la deja ir.
+    if (vn > 0) {
+      tr.x = px; tr.y = py;
+      tr.vx -= gx * vn * 1.25; tr.vy -= gy * vn * 1.25;
+      tr.vx *= 0.9; tr.vy *= 0.9;
+      if (vn > 25) race.events.push({ type: 'hit', k: tr.k });
+    }
+  }
 
   // Paredes: el campo de distancias da cuánto se salió y hacia dónde empujar.
   const lim = track.half - TRUCK_R;

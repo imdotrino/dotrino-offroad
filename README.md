@@ -48,11 +48,22 @@ Vite sin framework. Resolución interna 456×262, todo dibujado por código (sin
 alturas que `render.js` proyecta en **perspectiva caballera** (lo ancho tal cual, el fondo
 aplastado y corrido a la derecha, la altura hacia arriba), como las máquinas de antes.
 
-La pista se levanta por **módulos de altura**: cada esquina del trazado es un bloque a 0, 1 o 2
-pisos (15 unidades por piso) y cada recta une dos. Si están al mismo piso la recta es llana; si
+La pista se levanta por **módulos de altura**: cada esquina del trazado es un bloque a 0, 1, 2
+o 3 pisos (cuatro alturas, 15 unidades por piso; cada región fija su máximo) y cada recta une
+dos. Si están al mismo piso la recta es llana; si
 no, lleva una rampa empinada a media recta o, al bajar, un corte del que se cae volando. Cada
 bloque sube entero, con su valla, y por fuera queda el talud vertical. La salida va siempre a
 ras de suelo y las diagonales de un cruce también.
+
+Son **piezas independientes que encajan**: cada esquina es un arco a altura constante y cada
+recta una pieza con la altura uniforme a lo ancho (se proyecta sobre el eje de la recta, no se
+toma de la muestra más cercana) y la rampa dentro de la parte recta, sin tocar los arcos. Así
+dos piezas solo se juntan donde miden lo mismo. Si la pista pasa pegada a sí misma a distinta
+altura, entre los dos tramos queda un **muro de contención con valla** (`track.ledge`): la
+física lo trata como pared por los dos lados (rodando no se sube ni se cae por ahí; en el aire
+sí se puede caer encima) y la máquina lo esquiva al apuntar. Lo comprueba `tests/sim.mjs`
+sobre todo el ancho de las 24 pistas y de 40 al azar: todo salto entre píxeles vecinos es una
+rampa (≤ 45°) o un muro declarado, nunca algo intermedio.
 
 Ningún desnivel pasa de 45°: las bajadas bruscas de un nivel y la caída de una rampa son
 planos a 45°, y los obstáculos nunca se ponen donde cambia el piso. Obstáculos: rampas

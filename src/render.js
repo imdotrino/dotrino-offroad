@@ -70,7 +70,7 @@ export function paintTrack (track, regionKey) {
       const f = track.field[y * W + x];
       const d = f - half;
       const n = hash(x, y), n2 = hash(x >> 1, y >> 1);
-      if (d < -1) {
+      if (d < -1 && track.ledge[y * W + x] !== 2) {
         let k = 1;
         if (d > -3) k = 0.86;                              // tierra apelmazada junto a la valla
         // Textura de tierra: manchas grandes, grano fino y piedritas.
@@ -82,8 +82,9 @@ export function paintTrack (track, regionKey) {
         const rut = Math.sin(lat * 0.62 + blotch(fn * 4, 7, 26) * 5);
         if (rut > 0.9 && blotch(fn * 4, lat, 9) > 0.42) k *= 0.88; else if (rut < -0.94 && blotch(fn * 4 + 50, lat, 9) > 0.5) k *= 1.06;
         set(x, y, n2 < 0.5 ? pal.track : pal.track2, k);
-      } else if (d < 1.5) {
-        // Franjas a lo largo de la valla (no un ajedrezado suelto): siguen la pista.
+      } else if (d < 1.5 || track.ledge[y * W + x] === 2) {
+        // Franjas a lo largo de la valla (no un ajedrezado suelto): siguen la pista. La misma
+        // valla corona el muro entre dos piezas de lado a distinto piso.
         const block = Math.floor(track.near[y * W + x] * 4 / 7) & 1;
         set(x, y, block ? pal.wallA : pal.wallB, d >= 0.8 ? 0.85 : 1.06);
       } else {
@@ -161,7 +162,7 @@ export function paintTrack (track, regionKey) {
   const total = new Float32Array(W * H);
   for (let i = 0; i < W * H; i++) {
     const d = track.field[i] - half;
-    total[i] = track.height[i] + (d >= -1 && d < 1.5 ? WALL_H : rise[i]);
+    total[i] = track.height[i] + ((d >= -1 && d < 1.5) || track.ledge[i] === 2 ? WALL_H : rise[i]);
   }
   // SOMBRAS ARROJADAS. La luz viene del noroeste y a media altura: un punto queda en sombra
   // si, mirando hacia la luz, algo sube más de lo que se aleja. Sirve igual para una valla,

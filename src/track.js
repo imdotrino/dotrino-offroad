@@ -398,7 +398,7 @@ export function buildTrack (spec) {
   // cada recta une dos: si están al mismo piso es llana; si no, una RAMPA a media recta, más
   // tendida o, al bajar, a 45° (la bajada brusca, de la que se sale volando). La pista queda hecha de bloques que
   // encajan, con su talud vertical por fuera.
-  const m = pts.length, maxLevel = spec.maxLevel ?? 2;
+  const m = pts.length, maxLevel = spec.maxLevel ?? 3;
   const vIdx = pts.map(p => { let b = 0, bd = 1e9; for (let i = 0; i < n; i++) { const d = Math.hypot(samples[i].x - p[0], samples[i].y - p[1]); if (d < bd) { bd = d; b = i; } } return b; });
   const elen = (k) => Math.hypot(pts[(k + 1) % m][0] - pts[k][0], pts[(k + 1) % m][1] - pts[k][1]);
   const lv = new Array(m).fill(0), pinned = new Array(m).fill(false);
@@ -407,38 +407,79 @@ export function buildTrack (spec) {
     const a = pts[k], b = pts[(k + 1) % m];
     if (Math.abs(a[0] - b[0]) > 1 && Math.abs(a[1] - b[1]) > 1 && elen(k) > 100) pinned[k] = pinned[(k + 1) % m] = true;
   }
+  // Cada pieza: la recta k va de la esquina k a la k+1. La esquina es un ARCO (pieza a altura
+  // constante) que ocupa `tanLen` a cada lado del vértice; lo que queda entre los dos arcos es
+  // la parte recta, la única donde cabe una rampa. Así dos piezas solo se tocan donde tienen
+  // la misma altura, y no sale ningún muro a lo ancho.
+  const tanLen = pts.map((B, k) => {
+    const A = pts[(k + m - 1) % m], C = pts[(k + 1) % m];
+    const ul = Math.hypot(A[0] - B[0], A[1] - B[1]), vl = Math.hypot(C[0] - B[0], C[1] - B[1]);
+    const th = Math.acos(Math.max(-1, Math.min(1, ((A[0] - B[0]) * (C[0] - B[0]) + (A[1] - B[1]) * (C[1] - B[1])) / (ul * vl))));
+    return th > Math.PI - 0.05 ? 0 : Math.min(CORNER_R / Math.tan(th / 2), 0.47 * Math.min(ul, vl));
+  });
+  const MARGIN = 4;                                                // la rampa no toca el arco
+  const usable = (k) => elen(k) - tanLen[k] - tanLen[(k + 1) % m] - 2 * MARGIN;
+  // Dos piezas que se tocan DE LADO sin ser tramos seguidos (la pista pasa pegada a sí misma)
+  // pueden ir a distinto piso: entre ellas queda un MURO de contención con su valla (`ledge`),
+  // que la física trata como pared. Lo que no puede pasar es que dos piezas enlazadas por el
+  // camino no midan lo mismo donde se juntan: eso lo garantiza la proyección de más abajo.
   for (let k = 2; k < m; k++) {
     let L = lv[k - 1];
-    if (!pinned[k] && elen(k - 1) >= 58) {
+    if (!pinned[k] && usable(k - 1) >= 16) {
       const r = rand();
-      if (r < 0.42 && L < maxLevel) L++; else if (r < 0.74 && L > 0) L -= rand() < 0.35 && L > 1 ? 2 : 1;
+      if (r < 0.42 && L < maxLevel) L++; else if (r < 0.74 && L > 0) L -= rand() < 0.35 && L > 1 && usable(k - 1) >= 32 ? 2 : 1;
     }
     lv[k] = pinned[k] ? 0 : L;
   }
-  for (let pass = 0; pass < 6; pass++) {
+  // Coherencia: cada regla solo BAJA pisos (la salida y los cruces están a 0 y no se tocan),
+  // así que la pasada converge siempre; antes dos reglas se peleaban por un mismo vértice.
+  for (let changed = true, pass = 0; changed && pass < 40; pass++) {
+    changed = false;
     for (let k = 0; k < m; k++) {
-      const a = k, b = (k + 1) % m;
-      // Una recta corta no da para cambiar de piso, y de subida solo se sube un piso por recta.
-      if (elen(k) < 58 && lv[a] !== lv[b]) { if (!pinned[b]) lv[b] = lv[a]; else if (!pinned[a]) lv[a] = lv[b]; }
-      if (lv[b] - lv[a] > 1) { if (!pinned[b]) lv[b] = lv[a] + 1; else if (!pinned[a]) lv[a] = lv[b] - 1; }
+      const a = k, b = (k + 1) % m, lo = Math.min(lv[a], lv[b]), hi = Math.max(lv[a], lv[b]);
+      if (lo === hi) continue;
+      // Una recta corta (menos de 16 px entre arcos: lo que pide una rampa a 45°) no da para
+      // cambiar de piso: los dos lados bajan al menor.
+      if (usable(k) < 16) { lv[a] = lv[b] = lo; changed = true; continue; }
+      // De subida solo se sube un piso por recta, y una bajada de dos pisos a 45° necesita 30
+      // px de recta: el alto baja a un piso por encima del bajo.
+      if (hi - lo > 1 && (lv[b] > lv[a] || usable(k) < 32)) { if (lv[a] === hi) lv[a] = lo + 1; else lv[b] = lo + 1; changed = true; }
     }
   }
   const sm = (u) => { u = u < 0 ? 0 : u > 1 ? 1 : u; return u * u * (3 - 2 * u); };
+  const isDrop = pts.map((_, k) => { const a = lv[k], b = lv[(k + 1) % m]; return b < a && (b < a - 1 || rand() < 0.55); });
+  const dirs = pts.map((p, k) => { const q = pts[(k + 1) % m], L = elen(k) || 1; return [(q[0] - p[0]) / L, (q[1] - p[1]) / L]; });
+  // Altura de la pieza k a `u` píxeles de su esquina de entrada, uniforme a lo ancho. Fuera de
+  // la parte recta vale lo de la esquina que toca, que es lo que vale el arco.
+  const rampLen = (k) => {
+    const a = lv[k], b = lv[(k + 1) % m], S = usable(k);
+    // Ningún desnivel pasa de 45°: la bajada brusca es una rampa a 45° justos (lo que baja es
+    // lo que avanza), no un corte vertical. Aun así, a velocidad se sale volando de arriba.
+    // Con menos de 24 px de recta la rampa va lineal a 45° justos; con más, suave (tendida).
+    return isDrop[k] || S < 24 ? Math.min(S, Math.abs(a - b) * LEVEL_H) : Math.min(S, Math.max(24, S * 0.4));
+  };
+  const isLinear = (k) => isDrop[k] || usable(k) < 24;
+  const pieceH = (k, u) => {
+    const a = lv[k], b = lv[(k + 1) % m];
+    if (a === b) return LEVEL_H * a;
+    const s0 = tanLen[k] + MARGIN, s1 = elen(k) - tanLen[(k + 1) % m] - MARGIN, len = rampLen(k);
+    const t = Math.max(0, Math.min(1, (u - ((s0 + s1) / 2 - len / 2)) / len));
+    return LEVEL_H * (a + (b - a) * (isLinear(k) ? t : sm(t)));
+  };
+  const along = (k, x, y) => (x - pts[k][0]) * dirs[k][0] + (y - pts[k][1]) * dirs[k][1];
+  // Pieza de cada muestra del eje: de la esquina k a la k+1.
+  const segOf = new Int32Array(n);
+  for (let k = 0; k < m; k++) {
+    const sA = vIdx[k], span = (vIdx[(k + 1) % m] - sA + n) % n;
+    for (let q = 0; q < span; q++) segOf[(sA + q) % n] = k;
+  }
   const level = new Float32Array(n);
+  for (let i = 0; i < n; i++) level[i] = pieceH(segOf[i], along(segOf[i], samples[i].x, samples[i].y));
   const drops = [];
   for (let k = 0; k < m; k++) {
-    const a = lv[k], b = lv[(k + 1) % m], sA = vIdx[k], span = (vIdx[(k + 1) % m] - sA + n) % n;
-    const drop = b < a && (b < a - 1 || rand() < 0.55);
-    const rl = Math.max(6, Math.min(13, span * 0.4)) / Math.max(1, span);       // la rampa, en fracción de recta
-    if (drop) drops.push((sA + Math.floor(span / 2)) % n);
-    for (let q = 0; q <= span; q++) {
-      const t = q / Math.max(1, span);
-      // Ningún desnivel pasa de 45°: la bajada brusca es una rampa a 45° justos (lo que baja
-      // es lo que avanza), no un corte vertical. Aun así, a velocidad se sale volando de arriba.
-      const steep = Math.min(0.9, (a - b) * LEVEL_H / STEP / Math.max(1, span));
-      const lin = Math.max(0, Math.min(1, (t - 0.5 + steep / 2) / steep));
-      level[(sA + q) % n] = LEVEL_H * (a === b ? a : drop ? a + (b - a) * lin : a + (b - a) * sm((t - 0.5 + rl / 2) / rl));
-    }
+    if (!isDrop[k]) continue;
+    const sA = vIdx[k], span = (vIdx[(k + 1) % m] - sA + n) % n;
+    drops.push((sA + Math.floor(span / 2)) % n);
   }
   const levels = lv;
   // Un obstáculo nunca se pone donde cambia el piso (ni justo antes ni justo después): dos
@@ -538,9 +579,29 @@ export function buildTrack (spec) {
   for (let k = 0; k < W * H; k++) {
     const d = field[k] - HALF;
     if (d < 5) {                                    // el módulo sube entero, con su valla; por fuera, talud vertical
-      const f = near[k], i0 = Math.floor(f) % n, i1 = (i0 + 1) % n, t = f - Math.floor(f);
-      height[k] = level[i0] + (level[i1] - level[i0]) * t;
+      const seg = segOf[Math.floor(near[k]) % n];
+      height[k] = pieceH(seg, along(seg, k % W, (k / W) | 0));
     }
+  }
+  // BORDES entre piezas de lado a distinto piso: el lado alto lleva la valla (dos píxeles de
+  // ancho, como la de fuera) y para la física es una pared por los dos lados.
+  const ledge = new Uint8Array(W * H);
+  for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
+    const k = y * W + x;
+    if (field[k] >= HALF) continue;
+    let high = false, low = false;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const j = k + dy * W + dx;
+      if (field[j] >= HALF) continue;
+      const diff = height[k] - height[j];
+      // Más de 1,2 por píxel ya no es una rampa (las rampas van a 45° como mucho): es muro.
+      if (diff > 1.2 && Math.abs(dx) + Math.abs(dy) <= 2) high = true;
+      else if (diff < -1.2 && Math.abs(dx) <= 1 && Math.abs(dy) <= 1) low = true;
+    }
+    ledge[k] = high ? 2 : low ? 1 : 0;
+  }
+  for (let k = 0; k < W * H; k++) {
+    const d = field[k] - HALF;
     // El relieve es de la pista y muere antes de llegar a la valla: así las vallas quedan
     // rectas y a nivel, y el terreno de fuera, limpio.
     let fall = Math.max(0, Math.min(1, (-d - 2) / 9));
@@ -625,7 +686,7 @@ export function buildTrack (spec) {
     rocks.push(r);
   }
 
-  return { spec, name: layout.name, samples, n, field, near, height, bumps, ramps, hills, puddles, whoops, mounds, rocks, pits, levels, level, drops, corners, half: HALF,
+  return { spec, name: layout.name, samples, n, field, near, height, ledge, bumps, ramps, hills, puddles, whoops, mounds, rocks, pits, levels, level, drops, corners, half: HALF,
     crossed: !!(/** @type {any} */ (layout.pts)).crossed, chicanes: (/** @type {any} */ (layout.pts)).chicanes || 0 };
 }
 

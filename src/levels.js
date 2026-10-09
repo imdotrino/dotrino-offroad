@@ -21,8 +21,8 @@ const REGIONS = [
 const OBSTACLES = {
   desert: { pits: 2, maxLevel: 1, rocks: 3, mounds: 3, whoops: 1, puddles: 3 },
   forest: { pits: 2, maxLevel: 2, rocks: 4, mounds: 3, whoops: 1, puddles: 5 },
-  snow: { pits: 1, maxLevel: 2, rocks: 4, mounds: 4, whoops: 2, puddles: 4 },
-  volcano: { pits: 3, maxLevel: 2, rocks: 6, mounds: 4, whoops: 2, puddles: 6 },
+  snow: { pits: 1, maxLevel: 3, rocks: 4, mounds: 4, whoops: 2, puddles: 4 },
+  volcano: { pits: 3, maxLevel: 3, rocks: 6, mounds: 4, whoops: 2, puddles: 6 },
 };
 
 const seedFor = (idx) => (200003 + idx * 7919) >>> 0;
