@@ -7,10 +7,10 @@ import { W, H, rng, heightAt, RAMP_LEN } from './track.js';
 
 const SHEAR = 0.2;             // cuánto se corre a la derecha cada unidad de fondo
 export const SW = W + Math.ceil(SHEAR * H) + 1;    // tamaño de la pantalla (lienzo)
-export const SH = 262;
+export const SH = 282;
 const KY = 0.62;               // cuánto se aplasta el fondo
 const KZ = 0.8;                // cuánto sube en pantalla una unidad de altura
-const OFF = 40;                // margen de arriba, para lo que sobresale
+const OFF = 60;                // margen de arriba: piso 3 + rampa + una camioneta saltando encima
 const WALL_H = 5;
 
 /** Del mundo (x, y, altura) a la fila de la pantalla. La columna es la misma x. */
@@ -198,25 +198,37 @@ export function paintTrack (track, regionKey) {
     }
   }
 
-  // HUECOS, pintados a mano ENCIMA de la luz y las sombras, para que salgan nítidos como en la
-  // referencia: la mitad de atrás (la que da a la luz) en sombra dura, con el borde en una línea
-  // oscura; la de delante, el piso iluminado, con el labio claro. El corte entre las dos es una
-  // media luna, que es como se ve la sombra de un borde curvo.
+  // HUECOS, pintados ENCIMA de la luz y las sombras, nítidos como en la referencia pero con la
+  // sombra que les toca por geometría, no una media luna dibujada: cada punto se ilumina por la
+  // normal de su pared (la que da la espalda a la luz va oscura, la que la mira va clara) y
+  // queda en sombra dura si el borde del hoyo le tapa la luz (se sigue el rayo hacia la luz,
+  // que sube 0,79 por píxel). El corte de la sombra es la silueta del borde proyectada, así
+  // que sigue la forma irregular del hoyo.
+  // Para la sombra arrojada la luz se toma más alta (sube 2,2 por píxel): con la real, un hoyo
+  // de 6 de hondo quedaba casi entero en sombra y volvía a ser una mancha.
+  const ldx = -LIGHT[0], ldy = -LIGHT[1], ll = Math.hypot(ldx, ldy), climb = 2.2;
   for (const pt of track.pits) {
-    for (let y = Math.max(0, (pt.y - pt.ry - 1) | 0); y <= Math.min(H - 1, (pt.y + pt.ry + 1) | 0); y++) {
-      for (let x = Math.max(0, (pt.x - pt.rx - 1) | 0); x <= Math.min(W - 1, (pt.x + pt.rx + 1) | 0); x++) {
-        const nx = (x - pt.x) / pt.rx, ny = (y - pt.y) / pt.ry, e = Math.hypot(nx, ny);
-        if (e >= 1) continue;
-        const i = y * W + x;
-        const base = hash(x >> 1, y >> 1) < 0.5 ? pal.track : pal.track2;
-        const inShadow = ny < 0.22 * (1 - nx * nx) - 0.02;
-        let k;
-        if (e > 0.9 && ny < 0.3) k = 0.26;                 // la línea del borde de atrás
-        else if (inShadow) k = 0.42 + 0.04 * hash(x, y);    // la pared de atrás, en sombra
-        else if (e > 0.86) k = 1.22;                        // el labio de delante, a la luz
-        else k = 0.98 + 0.06 * blotch(x + 7, y + 3, 3);     // el piso
-        px[i * 4] = base[0] * k; px[i * 4 + 1] = base[1] * k; px[i * 4 + 2] = base[2] * k;
+    const dep = (x, y) => (x < 0 || y < 0 || x >= pt.w || y >= pt.h ? 0 : pt.dep[y * pt.w + x]);
+    for (let y = 0; y < pt.h; y++) for (let x = 0; x < pt.w; x++) {
+      const d0 = dep(x, y);
+      if (d0 <= 0) continue;
+      const gx = pt.x0 + x, gy = pt.y0 + y, i = gy * W + gx;
+      const base = hash(gx >> 1, gy >> 1) < 0.5 ? pal.track : pal.track2;
+      // Normal de la pared (la profundidad crece hacia dentro: la altura es -dep).
+      const nx = (dep(x + 1, y) - dep(x - 1, y)) / 2, ny = (dep(x, y + 1) - dep(x, y - 1)) / 2;
+      const lit = (nx * LIGHT[0] + ny * LIGHT[1] + LIGHT[2]) / Math.hypot(nx, ny, 1);
+      let shadow = false;
+      for (let t = 1; t <= 9 && !shadow; t++) {
+        const sx = Math.round(x + ldx / ll * t), sy = Math.round(y + ldy / ll * t);
+        if (-dep(sx, sy) > -d0 + climb * t) shadow = true;
       }
+      let k;
+      if (shadow || lit < 0.5) k = 0.42 + 0.05 * hash(gx, gy);          // pared de espaldas a la luz, o tapada
+      else if (lit > 0.84) k = 1.2;                                        // la pared que mira a la luz: el labio claro
+      else k = 0.96 + 0.06 * blotch(gx + 7, gy + 3, 3);                    // el fondo
+      // El borde de atrás lleva su línea oscura: el filo del corte, de un píxel.
+      if (d0 < 1.2 && (shadow || lit < 0.5)) k = 0.28;
+      px[i * 4] = base[0] * k; px[i * 4 + 1] = base[1] * k; px[i * 4 + 2] = base[2] * k;
     }
   }
 

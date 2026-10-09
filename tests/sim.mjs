@@ -200,7 +200,10 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
     assert.ok(t.pits.length >= 2, `only ${t.pits.length} pits`);
     for (const pt of t.pits) {
       assert.ok(distAt(t, pt.x, pt.y) < t.half - pt.rx, 'pit outside the track');
-      assert.ok(t.height[Math.round(pt.y) * W + Math.round(pt.x)] < -4.5, 'pit floor should be 6 below');
+      assert.ok(pt.floor > 0, `${pt.type} has no floor at full depth`);
+      let deepest = 0;
+      for (const v of pt.dep) deepest = Math.max(deepest, v);
+      assert.ok(deepest >= pt.d - 0.01, `${pt.type} floor should be ${pt.d} below`);
     }
   }
   assert.ok(high >= 18, `only ${high}/24 tracks have a raised stretch`);
@@ -252,7 +255,7 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
     for (let i = 0; i < secs * 60; i++) { step(race, 1 / 60, { steer: 0, gas: true, brake: false, nitro: false }); race.over = false; if (a.air) air++; minG = Math.min(minG, a.g); }
     return { air, minG };
   };
-  const t = mk(3, 0), pt = t.pits[0];
+  const t = mk(3, 0), pt = t.pits.find(p => p.type !== 'trench') || t.pits[0];
   const r = drive(t, { x: pt.x - pt.rx - 14, y: pt.y }, 0, 1);
   assert.ok(r.minG < -4, `the truck never went down into the pit (${r.minG.toFixed(1)})`);
   assert.equal(r.air, 0, `the truck left the ground ${r.air} frames crossing a pit: it must roll through`);

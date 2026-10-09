@@ -648,28 +648,64 @@ export function buildTrack (spec) {
     puddles.push(p);
   }
 
-  // HUECOS: hoyos de paredes a 45° a un lado del eje. Se esquivan, o se cae dentro y cuesta
-  // salir. Van en la altura, así que la pared del fondo y la sombra salen solas.
+  // HUECOS: hoyos de paredes a 45° que se esquivan o se cruzan rodando (cuesta salir). Tres
+  // tipos, ninguno perfectamente redondo: HOYO (a un lado del eje, de borde irregular), CRÁTER
+  // (más ancho y menos hondo) y ZANJA (atraviesa la pista de valla a valla, de borde ondulado).
+  // Cada uno lleva su máscara de profundidad por píxel (`dep`), que es lo que se resta a la
+  // altura y lo que usa el pintado: forma, pared y sombra salen de la misma geometría.
   const pits = [];
+  const mkPit = (q, type, lat) => {
+    const ph = [rand() * 6.3, rand() * 6.3, rand() * 6.3];
+    const pt = type === 'trench'
+      ? { type, x: q.x, y: q.y, rx: 6 + rand() * 2.5, ry: HALF, d: 6 }
+      : type === 'crater'
+        ? { type, x: q.x - q.ty * lat, y: q.y + q.tx * lat, rx: 15 + rand() * 4, ry: 11 + rand() * 3, d: 5 }
+        : { type, x: q.x - q.ty * lat, y: q.y + q.tx * lat, rx: 10 + rand() * 5, ry: 8 + rand() * 3, d: 6 };
+    const R = Math.ceil(Math.max(pt.rx, pt.ry) * 1.3) + 3;
+    pt.x0 = Math.max(0, Math.floor(pt.x - R)); pt.y0 = Math.max(0, Math.floor(pt.y - R));
+    pt.w = Math.min(W - 1, Math.ceil(pt.x + R)) - pt.x0 + 1; pt.h = Math.min(H - 1, Math.ceil(pt.y + R)) - pt.y0 + 1;
+    pt.dep = new Float32Array(pt.w * pt.h);
+    let full = 0;
+    for (let y = 0; y < pt.h; y++) for (let x = 0; x < pt.w; x++) {
+      const gx = pt.x0 + x, gy = pt.y0 + y, k = gy * W + gx;
+      if (field[k] >= HALF - 1) continue;                            // nunca bajo la valla
+      let edge;                                                       // distancia al borde, en px
+      if (type === 'trench') {
+        const u = (gx - q.x) * q.tx + (gy - q.y) * q.ty, v = -(gx - q.x) * q.ty + (gy - q.y) * q.tx;
+        const hw = pt.rx * (1 + 0.22 * Math.sin(v * 0.33 + ph[0]) + 0.12 * Math.sin(v * 0.9 + ph[1]));
+        edge = hw - Math.abs(u);
+      } else {
+        const dx = (gx - pt.x) / pt.rx, dy = (gy - pt.y) / pt.ry, th = Math.atan2(dy, dx);
+        const rad = 1 + 0.15 * Math.sin(2 * th + ph[0]) + 0.1 * Math.sin(3 * th + ph[1]) + 0.05 * Math.sin(5 * th + ph[2]);
+        const e = Math.hypot(dx, dy) / rad;
+        edge = (1 - e) * rad * Math.hypot(pt.rx * Math.cos(th), pt.ry * Math.sin(th));
+      }
+      if (edge <= 0) continue;
+      const dep = Math.min(edge, pt.d);                                // del borde al fondo a 45°
+      pt.dep[y * pt.w + x] = dep;
+      if (dep >= pt.d - 0.01) full++;
+    }
+    pt.floor = full;
+    return pt;
+  };
   for (let tries = 0; tries < 300 && pits.length < (spec.pits ?? 0); tries++) {
     const i = 14 + Math.floor(rand() * (n - 28));
-    if (nearCross(i, 10) || onRamp(i, 6) || onSlope(i, 6) || samples[i].curv > 0.3) continue;
+    if (nearCross(i, 12) || onRamp(i, 6) || onSlope(i, 8) || samples[i].curv > 0.3) continue;
     if (bumps.some(b => circ(b, i) < 8) || mounds.some(m => circ(m.i, i) < 9) || whoops.some(w => circ(w + 5, i) < 12)) continue;
+    const r = rand(), type = r < 0.3 ? 'trench' : r < 0.5 ? 'crater' : 'hole';
     const q = samples[i], lat = (rand() < 0.5 ? -1 : 1) * (7 + rand() * 14);
-    const pt = { x: q.x - q.ty * lat, y: q.y + q.tx * lat, rx: 10 + rand() * 5, ry: 7 + rand() * 3, d: 6, i, lat };
-    if (field[Math.round(pt.y) * W + Math.round(pt.x)] > HALF - pt.rx - 4) continue;
-    if (pits.some(o => Math.hypot(o.x - pt.x, o.y - pt.y) < 40) || puddles.some(o => Math.hypot(o.x - pt.x, o.y - pt.y) < o.r + pt.rx + 4)) continue;
-    pits.push(pt);
+    const pt = { x: type === 'trench' ? q.x : q.x - q.ty * lat, y: type === 'trench' ? q.y : q.y + q.tx * lat, rx: type === 'trench' ? 9 : type === 'crater' ? 19 : 15 };
+    if (type !== 'trench' && field[Math.round(pt.y) * W + Math.round(pt.x)] > HALF - pt.rx - 2) continue;
+    if (pits.some(o => Math.hypot(o.x - pt.x, o.y - pt.y) < 44 || circ(o.i, i) < 12) || puddles.some(o => Math.hypot(o.x - pt.x, o.y - pt.y) < o.r + pt.rx + 4)) continue;
+    const made = mkPit(q, type, lat);
+    if (!made.floor) continue;                                         // no le cupo el fondo
+    made.i = i; made.lat = type === 'trench' ? 0 : lat;
+    pits.push(made);
   }
   for (const pt of pits) {
-    for (let y = Math.max(0, (pt.y - pt.ry - 2) | 0); y <= Math.min(H - 1, (pt.y + pt.ry + 2) | 0); y++) {
-      for (let x = Math.max(0, (pt.x - pt.rx - 2) | 0); x <= Math.min(W - 1, (pt.x + pt.rx + 2) | 0); x++) {
-        const e = Math.hypot((x - pt.x) / pt.rx, (y - pt.y) / pt.ry);     // 1 = el borde
-        if (e >= 1) continue;
-        // Del borde al fondo en 6 px (a 45°); el centro, plano.
-        const edge = Math.min(Math.hypot((1 - e) * pt.rx, (1 - e) * pt.ry), pt.d) / pt.d;
-        height[y * W + x] -= pt.d * edge;
-      }
+    for (let y = 0; y < pt.h; y++) for (let x = 0; x < pt.w; x++) {
+      const dep = pt.dep[y * pt.w + x];
+      if (dep > 0) height[(pt.y0 + y) * W + pt.x0 + x] -= dep;
     }
   }
 
@@ -682,7 +718,7 @@ export function buildTrack (spec) {
     const q = samples[i], lat = (rand() < 0.5 ? -1 : 1) * (6 + rand() * 22);
     const r = { x: q.x - q.ty * lat, y: q.y + q.tx * lat, r: 4.5 + rand() * 1.5, i, lat };
     if (field[Math.round(r.y) * W + Math.round(r.x)] > HALF - r.r - 4) continue;       // pegada a la valla no
-    if (rocks.some(o => Math.hypot(o.x - r.x, o.y - r.y) < 44) || puddles.some(o => Math.hypot(o.x - r.x, o.y - r.y) < o.r + 12)) continue;
+    if (rocks.some(o => Math.hypot(o.x - r.x, o.y - r.y) < 44) || puddles.some(o => Math.hypot(o.x - r.x, o.y - r.y) < o.r + 12) || pits.some(o => circ(o.i, i) < 12)) continue;
     rocks.push(r);
   }
 

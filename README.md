@@ -67,8 +67,16 @@ rampa (≤ 45°) o un muro declarado, nunca algo intermedio.
 
 Ningún desnivel pasa de 45°: las bajadas bruscas de un nivel y la caída de una rampa son
 planos a 45°, y los obstáculos nunca se ponen donde cambia el piso. Obstáculos: rampas
-(plano limpio con cresta), montañas (conos con arista), huecos (hoyos de paredes a 45°),
-lomas, ondulado, rocas y charcos.
+(plano limpio con cresta), montañas (conos con arista), huecos, lomas, ondulado, rocas y
+charcos.
+
+Los huecos son de tres tipos y ninguno es redondo: **hoyo** (a un lado del eje, borde
+irregular), **cráter** (más ancho y menos hondo) y **zanja** (atraviesa la pista de valla a
+valla, de borde ondulado). Cada uno lleva su máscara de profundidad por píxel (`pit.dep`), que
+es lo que se resta a la altura y lo que usa el pintado: la pared se ilumina por su normal (la
+que da la espalda a la luz va oscura, la que la mira es el labio claro) y la sombra arrojada se
+calcula siguiendo el rayo hacia la luz, así que el corte de la sombra es la silueta del borde
+y sigue la forma del hueco. Se cruzan rodando, sin despegar.
 
 Las camionetas son un campo de alturas con las aristas biseladas, iluminado por su normal
 (`truckModel`), girado en 32 ángulos. Además se inclinan con la normal del piso (cabeceo a lo
