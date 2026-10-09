@@ -251,18 +251,23 @@ function finishSamples (s) {
 }
 
 /**
- * Distancia «de octógono» de un punto a un segmento: la mayor entre lo que se aleja en x, en y
- * y en diagonal. Con esa medida la franja de pista sale con lados rectos y las esquinas
- * CORTADAS a 45°, como las vallas del original. `cap`: si ya se sabe que no baja de ahí, se deja.
+ * Distancia de un punto a un segmento, medida según el ESTILO de esquina:
+ *   0 redonda  → distancia normal (la franja dobla en arco)
+ *   1 a 45°    → «de octógono»: la mayor entre lo que se aleja en x, en y y en diagonal
+ * En una recta horizontal o vertical las dos dan lo mismo, así que cambiar de estilo a media
+ * recta no deja costura. `cap`: si ya se sabe que no baja de ahí, se deja.
  */
 const OCT = Math.SQRT1_2;
-function octDist (px, py, a, b, cap) {
+function segDist (px, py, a, b, cap, style) {
   // Cota rápida: lo que falta hasta la caja del segmento.
   const lx = Math.max(Math.min(a[0], b[0]) - px, px - Math.max(a[0], b[0]), 0);
   const ly = Math.max(Math.min(a[1], b[1]) - py, py - Math.max(a[1], b[1]), 0);
   if (Math.max(lx, ly) >= cap) return cap;
   const ax = a[0] - px, ay = a[1] - py, bx = b[0] - a[0], by = b[1] - a[1];
-  const g = (t) => { const u = Math.abs(ax + bx * t), v = Math.abs(ay + by * t); return Math.max(u, v, (u + v) * OCT); };
+  const g = (t) => {
+    const u = Math.abs(ax + bx * t), v = Math.abs(ay + by * t);
+    return style === 0 ? Math.hypot(u, v) : Math.max(u, v, (u + v) * OCT);
+  };
   // g es convexa en t: búsqueda ternaria.
   let lo = 0, hi = 1;
   for (let k = 0; k < 16; k++) {
@@ -273,17 +278,20 @@ function octDist (px, py, a, b, cap) {
 }
 
 /**
- * `field`: distancia de cada punto al POLÍGONO de la pista, medida «de octógono»: lados rectos y
- * esquinas cortadas a 45°, por fuera y por dentro. `near`: en qué punto de la trazada cae cada punto (muestra con decimales).
+ * `field`: distancia de cada punto al POLÍGONO de la pista. Cada punto usa el estilo de la
+ * esquina que tiene más cerca (`styles`), así que en una misma pista hay esquinas en arco y
+ * cortadas a 45°. Los picos que queden los lima después `smoothCorners`. `near`: en qué punto de la trazada cae cada punto (muestra con decimales).
  */
-function buildField (s, poly) {
+function buildField (s, poly, styles) {
   const n = s.length, m = poly.length;
   const field = new Float32Array(W * H);
   const near = new Float32Array(W * H);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       let box = 1e9;
-      for (let k = 0; k < m; k++) box = octDist(x, y, poly[k], poly[(k + 1) % m], box);
+      let style = 0, vd = 1e9;
+      for (let k = 0; k < m; k++) { const d = (poly[k][0] - x) ** 2 + (poly[k][1] - y) ** 2; if (d < vd) { vd = d; style = styles[k]; } }
+      for (let k = 0; k < m; k++) box = segDist(x, y, poly[k], poly[(k + 1) % m], box, style);
       let best = 1e9, bn = 0;
       for (let i = 0; i < n; i++) {
         const a = s[i], b = s[(i + 1) % n];
@@ -300,6 +308,57 @@ function buildField (s, poly) {
     }
   }
   return { field, near };
+}
+
+/** Distancia de cada punto al punto marcado más cercano (transformada exacta, dos pasadas 1D). */
+function distanceTo (mask) {
+  const INF = 1e12, out = new Float32Array(W * H);
+  const size = Math.max(W, H), f = new Float64Array(size), d = new Float64Array(size), v = new Int32Array(size), z = new Float64Array(size + 1);
+  const pass = (len) => {
+    let k = 0; v[0] = 0; z[0] = -INF; z[1] = INF;
+    for (let q = 1; q < len; q++) {
+      let p;
+      do { const r = v[k]; p = ((f[q] + q * q) - (f[r] + r * r)) / (2 * q - 2 * r); } while (p <= z[k] && --k >= 0);
+      k++; v[k] = q; z[k] = p; z[k + 1] = INF;
+    }
+    k = 0;
+    for (let q = 0; q < len; q++) { while (z[k + 1] < q) k++; const r = v[k]; d[q] = (q - r) * (q - r) + f[r]; }
+  };
+  for (let x = 0; x < W; x++) {
+    for (let y = 0; y < H; y++) f[y] = mask[y * W + x] ? 0 : INF;
+    pass(H);
+    for (let y = 0; y < H; y++) out[y * W + x] = d[y];
+  }
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) f[x] = out[y * W + x];
+    pass(W);
+    for (let x = 0; x < W; x++) out[y * W + x] = Math.sqrt(d[x]);
+  }
+  return out;
+}
+
+/**
+ * NINGUNA ESQUINA PUNTIAGUDA. Las vallas siguen rectas y justo en cada esquina, por fuera y por
+ * dentro, queda un arco pequeño. Se hace sobre la silueta de la pista: primero se le liman los
+ * picos que salen y luego se le rellenan los que entran, con un disco de radio CORNER_ARC; de
+ * paso desaparecen las isletas que eran poco más que una valla. Después `field` se rehace como
+ * distancia a la valla resultante.
+ */
+const CORNER_ARC = 9;
+function smoothCorners (field) {
+  const N = W * H, r = CORNER_ARC;
+  const grow = (mask, by) => { const d = distanceTo(mask), o = new Uint8Array(N); for (let i = 0; i < N; i++) o[i] = d[i] <= by ? 1 : 0; return o; };
+  const not = (mask) => { const o = new Uint8Array(N); for (let i = 0; i < N; i++) o[i] = mask[i] ? 0 : 1; return o; };
+  const shrink = (mask, by) => not(grow(not(mask), by));
+  let track = new Uint8Array(N);
+  for (let i = 0; i < N; i++) track[i] = field[i] < HALF ? 1 : 0;
+  // El borde del mundo cuenta como «fuera».
+  for (let x = 0; x < W; x++) { track[x] = 0; track[(H - 1) * W + x] = 0; }
+  for (let y = 0; y < H; y++) { track[y * W] = 0; track[y * W + W - 1] = 0; }
+  track = grow(shrink(track, r), r);          // lima los picos que salen
+  track = shrink(grow(track, r), r);          // rellena los picos que entran
+  const inside = distanceTo(not(track)), outside = distanceTo(track);
+  for (let i = 0; i < N; i++) field[i] = track[i] ? HALF - (inside[i] - 0.5) : HALF + (outside[i] - 0.5);
 }
 
 /**
@@ -321,7 +380,18 @@ export function buildTrack (spec) {
   for (const q of samples) { q.x = Math.max(M, Math.min(W - M, q.x)); q.y = Math.max(M, Math.min(H - M, q.y)); }
   finishSamples(samples);
   const n = samples.length;
-  const { field, near } = buildField(samples, pts);
+  // Estilo de cada esquina. Se sortea solo donde los dos lados que llegan son
+  // horizontales o verticales; junto a una diagonal va en arco, que es la única medida que no
+  // ensancha la diagonal.
+  const styleRand = rng((spec.seed ^ 0xc0ffee) >>> 0);
+  const straight = (a, b) => Math.abs(a[0] - b[0]) < 1 || Math.abs(a[1] - b[1]) < 1;
+  const corners = pts.map((p, k) => {
+    const r = styleRand();
+    if (!straight(pts[(k + pts.length - 1) % pts.length], p) || !straight(p, pts[(k + 1) % pts.length])) return 0;
+    return r < 0.55 ? 0 : 1;                       // en arco o cortada a 45°; cuadrada, nunca
+  });
+  const { field, near } = buildField(samples, pts, corners);
+  smoothCorners(field);
   const rand = rng(spec.seed);
 
   // Lomas: en tramos rectos, lejos de la salida y separadas entre sí.
@@ -516,7 +586,7 @@ export function buildTrack (spec) {
     rocks.push(r);
   }
 
-  return { spec, name: layout.name, samples, n, field, near, height, bumps, ramps, hills, puddles, whoops, mounds, rocks, levels, level, drops, half: HALF,
+  return { spec, name: layout.name, samples, n, field, near, height, bumps, ramps, hills, puddles, whoops, mounds, rocks, levels, level, drops, corners, half: HALF,
     crossed: !!(/** @type {any} */ (layout.pts)).crossed, chicanes: (/** @type {any} */ (layout.pts)).chicanes || 0 };
 }
 

@@ -160,6 +160,27 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
       if (!t.crossed) assert.ok(h >= lo && h <= hi, `gen ${seed}: ground at ${h.toFixed(1)} but module level is ${t.level[i].toFixed(1)}`);
     }
   }
+  // Esquinas: en una misma tanda de pistas salen los tres estilos (arco, 45° y cuadrada).
+  const styles = new Set();
+  for (let seed = 1; seed <= 6; seed++) for (const c of buildTrack({ seed: seed * 104729, size: 5, maxLevel: 0 }).corners) styles.add(c);
+  assert.deepEqual([...styles].sort(), [0, 1]);
+  // Y ninguna esquina puntiaguda: en todo el contorno de la pista, la valla no dobla 90° de
+  // golpe. Se mira el giro de la normal entre dos puntos del borde separados 6 px.
+  {
+    const t = buildTrack({ seed: 3 * 104729, size: 6, maxLevel: 0 });
+    const gradAt = (x, y) => { const gx = distAt(t, x + 2, y) - distAt(t, x - 2, y), gy = distAt(t, x, y + 2) - distAt(t, x, y - 2), l = Math.hypot(gx, gy) || 1; return [gx / l, gy / l]; };
+    let worst = 0;
+    for (let y = 8; y < H - 8; y += 2) for (let x = 8; x < W - 8; x += 2) {
+      if (Math.abs(distAt(t, x, y) - t.half) > 1) continue;
+      const [nx, ny] = gradAt(x, y);
+      // el siguiente punto del borde, 6 px más allá siguiendo la valla
+      const qx = x - ny * 6, qy = y + nx * 6;
+      if (Math.abs(distAt(t, qx, qy) - t.half) > 2.5) continue;
+      const [mx, my] = gradAt(qx, qy);
+      worst = Math.max(worst, Math.acos(Math.max(-1, Math.min(1, nx * mx + ny * my))));
+    }
+    assert.ok(worst < 1.15, `a wall turns ${(worst * 57.3).toFixed(0)}° within 6 px: that is a pointed corner`);
+  }
   assert.ok(high >= 18, `only ${high}/24 tracks have a raised stretch`);
   assert.ok(twoFloors >= 6, `only ${twoFloors}/24 tracks reach the second floor`);
   assert.ok(withDrop >= 8, `only ${withDrop}/24 tracks have a drop`);

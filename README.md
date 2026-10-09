@@ -68,8 +68,10 @@ npm run test:e2e   # Playwright sobre el build
 | `src/race.js` | Pantalla de carrera: bucle, mandos y marcador |
 | `src/main.js` | Mapa, taller, resultado y compartir |
 
-La pista tiene lados rectos y las **esquinas cortadas a 45°**, por fuera y por dentro: la
-franja se mide con distancia «de octógono» al polígono (`buildField`).
+La pista tiene lados rectos y **ninguna esquina puntiaguda**. Cada esquina sale, según la
+semilla, en arco o cortada a 45° (`buildField` mide la franja con distancia normal o «de
+octógono» según la esquina más cercana), y después `smoothCorners` lima sobre la silueta los
+picos que queden, por fuera y por dentro, con un arco de 9 px.
 La trazada por la que se mide el avance y conduce la máquina sí va redondeada.
 
 Las pistas se **arman por piezas** a partir de una semilla (`generateLayout` en `src/track.js`):
