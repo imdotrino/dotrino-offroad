@@ -10,7 +10,7 @@ export const H = 354;
 export const HALF = 38;        // medio ancho de la pista: MUY ancha, seis camionetas a la par
 export const RAMP_LEN = 10;    // largo de una rampa, en muestras
 export const RAMP_H = 15;      // alto del borde de una rampa
-const LEVEL_RAMP = 10;         // largo de la cuesta de un nivel, en muestras
+export const LEVEL_H = 15;     // alto de un piso
 const STEP = 4;                // separación entre muestras del eje
 const FX = 52, FY = 54, FW = W - 104, FH = H - 108;   // área útil para los puntos de control
 
@@ -250,27 +250,31 @@ function finishSamples (s) {
   }
 }
 
-/** Distancia «de cuadrado» (la mayor de las dos coordenadas) de un punto a un segmento. */
-function boxDist (px, py, a, b) {
+/**
+ * Distancia «de octógono» de un punto a un segmento: la mayor entre lo que se aleja en x, en y
+ * y en diagonal. Con esa medida la franja de pista sale con lados rectos y las esquinas
+ * CORTADAS a 45°, como las vallas del original. `cap`: si ya se sabe que no baja de ahí, se deja.
+ */
+const OCT = Math.SQRT1_2;
+function octDist (px, py, a, b, cap) {
+  // Cota rápida: lo que falta hasta la caja del segmento.
+  const lx = Math.max(Math.min(a[0], b[0]) - px, px - Math.max(a[0], b[0]), 0);
+  const ly = Math.max(Math.min(a[1], b[1]) - py, py - Math.max(a[1], b[1]), 0);
+  if (Math.max(lx, ly) >= cap) return cap;
   const ax = a[0] - px, ay = a[1] - py, bx = b[0] - a[0], by = b[1] - a[1];
-  let best = 1e9;
-  const tryT = (t) => {
-    t = t < 0 ? 0 : t > 1 ? 1 : t;
-    const d = Math.max(Math.abs(ax + bx * t), Math.abs(ay + by * t));
-    if (d < best) best = d;
-  };
-  tryT(0); tryT(1);
-  if (bx) tryT(-ax / bx);
-  if (by) tryT(-ay / by);
-  if (bx - by) tryT((ay - ax) / (bx - by));
-  if (bx + by) tryT(-(ax + ay) / (bx + by));
-  return best;
+  const g = (t) => { const u = Math.abs(ax + bx * t), v = Math.abs(ay + by * t); return Math.max(u, v, (u + v) * OCT); };
+  // g es convexa en t: búsqueda ternaria.
+  let lo = 0, hi = 1;
+  for (let k = 0; k < 16; k++) {
+    const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+    if (g(m1) < g(m2)) hi = m2; else lo = m1;
+  }
+  return Math.min(cap, g((lo + hi) / 2));
 }
 
 /**
- * `field`: distancia de cada punto al POLÍGONO de la pista, medida «de cuadrado». Con esa medida
- * la franja de pista sale con las esquinas cuadradas, por fuera y por dentro, como en las
- * máquinas de antes. `near`: en qué punto de la trazada cae cada punto (muestra con decimales).
+ * `field`: distancia de cada punto al POLÍGONO de la pista, medida «de octógono»: lados rectos y
+ * esquinas cortadas a 45°, por fuera y por dentro. `near`: en qué punto de la trazada cae cada punto (muestra con decimales).
  */
 function buildField (s, poly) {
   const n = s.length, m = poly.length;
@@ -279,7 +283,7 @@ function buildField (s, poly) {
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       let box = 1e9;
-      for (let k = 0; k < m; k++) { const d = boxDist(x, y, poly[k], poly[(k + 1) % m]); if (d < box) box = d; }
+      for (let k = 0; k < m; k++) box = octDist(x, y, poly[k], poly[(k + 1) % m], box);
       let best = 1e9, bn = 0;
       for (let i = 0; i < n; i++) {
         const a = s[i], b = s[(i + 1) % n];
@@ -300,7 +304,7 @@ function buildField (s, poly) {
 
 /**
  * Construye una pista.
- * @param {{layout?:number, size?:number, cross?:number, chicane?:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, whoops?:number, mounds?:number, rocks?:number, levels?:number}} spec
+ * @param {{layout?:number, size?:number, cross?:number, chicane?:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, whoops?:number, mounds?:number, rocks?:number, maxLevel?:number}} spec
  */
 export function buildTrack (spec) {
   // Con `layout`, uno de los trazados dibujados a mano; sin él, una pista por piezas de su semilla.
@@ -403,34 +407,56 @@ export function buildTrack (spec) {
     for (const q of hills) { const c = circ(q.i, i) / q.s; e += q.h * Math.exp(-c * c / 2); }
     elev[i] = e;
   }
-  // NIVELES: tramos enteros de pista a otra altura (mesetas). Se sube por una cuesta y se sale
-  // por otra cuesta o por un corte, del que se cae volando. A diferencia de las lomas, sube el
-  // tramo entero, con sus vallas, y por fuera queda un talud.
-  const levels = [];
-  for (let tries = 0; tries < 300 && levels.length < (spec.levels ?? 1); tries++) {
-    const a = 22 + Math.floor(rand() * Math.max(1, n - 100)), len = 24 + Math.floor(rand() * 30);
-    if (a + len + LEVEL_RAMP > n - 12) continue;
-    let free = true;
-    for (let i = a - 12; i <= a + len + LEVEL_RAMP + 12; i += 3) if (nearCross((i + n) % n, 10) || onRamp((i + n) % n, 4)) { free = false; break; }
-    if (!free || levels.some(l => a < l.a + l.len + 34 && l.a < a + len + 34)) continue;
-    levels.push({ a, len, h: 14 + rand() * 6, drop: rand() < 0.6 });
+  // NIVELES POR MÓDULOS. Cada esquina del trazado es un módulo a una altura (0, 1 o 2 pisos) y
+  // cada recta une dos: si están al mismo piso es llana; si no, una RAMPA empinada a media
+  // recta o, al bajar, un CORTE del que se cae volando. La pista queda hecha de bloques que
+  // encajan, con su talud vertical por fuera.
+  const m = pts.length, maxLevel = spec.maxLevel ?? 2;
+  const vIdx = pts.map(p => { let b = 0, bd = 1e9; for (let i = 0; i < n; i++) { const d = Math.hypot(samples[i].x - p[0], samples[i].y - p[1]); if (d < bd) { bd = d; b = i; } } return b; });
+  const elen = (k) => Math.hypot(pts[(k + 1) % m][0] - pts[k][0], pts[(k + 1) % m][1] - pts[k][1]);
+  const lv = new Array(m).fill(0), pinned = new Array(m).fill(false);
+  pinned[0] = pinned[1] = true;                                  // la recta de salida, a nivel del suelo
+  for (let k = 0; k < m; k++) {                                  // y las diagonales de un cruce
+    const a = pts[k], b = pts[(k + 1) % m];
+    if (Math.abs(a[0] - b[0]) > 1 && Math.abs(a[1] - b[1]) > 1 && elen(k) > 100) pinned[k] = pinned[(k + 1) % m] = true;
+  }
+  for (let k = 2; k < m; k++) {
+    let L = lv[k - 1];
+    if (!pinned[k] && elen(k - 1) >= 58) {
+      const r = rand();
+      if (r < 0.42 && L < maxLevel) L++; else if (r < 0.74 && L > 0) L -= rand() < 0.35 && L > 1 ? 2 : 1;
+    }
+    lv[k] = pinned[k] ? 0 : L;
+  }
+  for (let pass = 0; pass < 6; pass++) {
+    for (let k = 0; k < m; k++) {
+      const a = k, b = (k + 1) % m;
+      // Una recta corta no da para cambiar de piso, y de subida solo se sube un piso por recta.
+      if (elen(k) < 58 && lv[a] !== lv[b]) { if (!pinned[b]) lv[b] = lv[a]; else if (!pinned[a]) lv[a] = lv[b]; }
+      if (lv[b] - lv[a] > 1) { if (!pinned[b]) lv[b] = lv[a] + 1; else if (!pinned[a]) lv[a] = lv[b] - 1; }
+    }
   }
   const sm = (u) => { u = u < 0 ? 0 : u > 1 ? 1 : u; return u * u * (3 - 2 * u); };
   const level = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    for (const l of levels) {
-      const c = i - l.a;
-      if (c < 0 || c > l.len + LEVEL_RAMP) continue;
-      level[i] += l.h * (c <= l.len ? sm(c / LEVEL_RAMP) : l.drop ? 0 : 1 - sm((c - l.len) / LEVEL_RAMP));
+  const drops = [];
+  for (let k = 0; k < m; k++) {
+    const a = lv[k], b = lv[(k + 1) % m], sA = vIdx[k], span = (vIdx[(k + 1) % m] - sA + n) % n;
+    const drop = b < a && (b < a - 1 || rand() < 0.55);
+    const rl = Math.max(6, Math.min(13, span * 0.4)) / Math.max(1, span);       // la rampa, en fracción de recta
+    if (drop) drops.push((sA + Math.floor(span / 2)) % n);
+    for (let q = 0; q <= span; q++) {
+      const t = q / Math.max(1, span);
+      level[(sA + q) % n] = LEVEL_H * (a === b ? a : drop ? (t < 0.5 ? a : b) : a + (b - a) * sm((t - 0.5 + rl / 2) / rl));
     }
   }
+  const levels = lv;
 
   const height = new Float32Array(W * H);
   for (let k = 0; k < W * H; k++) {
     const d = field[k] - HALF;
-    if (d < 8 && levels.length) {
+    if (d < 5) {                                    // el módulo sube entero, con su valla; por fuera, talud vertical
       const f = near[k], i0 = Math.floor(f) % n, i1 = (i0 + 1) % n, t = f - Math.floor(f);
-      height[k] = (level[i0] + (level[i1] - level[i0]) * t) * (d < 4 ? 1 : 1 - (d - 4) / 4);
+      height[k] = level[i0] + (level[i1] - level[i0]) * t;
     }
     // El relieve es de la pista y muere antes de llegar a la valla: así las vallas quedan
     // rectas y a nivel, y el terreno de fuera, limpio.
@@ -454,7 +480,7 @@ export function buildTrack (spec) {
   // Suavizado: en el interior de una curva muchos puntos caen en muestras distintas y la
   // altura sale a rayas; dos pasadas de promedio las borran.
   const tmp = new Float32Array(W * H);
-  for (let pass = 0; pass < 2; pass++) {
+  for (let pass = 0; pass < 1; pass++) {
     for (let y = 1; y < H - 1; y++) {
       for (let x = 1; x < W - 1; x++) {
         const k = y * W + x;
@@ -490,7 +516,7 @@ export function buildTrack (spec) {
     rocks.push(r);
   }
 
-  return { spec, name: layout.name, samples, n, field, near, height, bumps, ramps, hills, puddles, whoops, mounds, rocks, levels, level, half: HALF,
+  return { spec, name: layout.name, samples, n, field, near, height, bumps, ramps, hills, puddles, whoops, mounds, rocks, levels, level, drops, half: HALF,
     crossed: !!(/** @type {any} */ (layout.pts)).crossed, chicanes: (/** @type {any} */ (layout.pts)).chicanes || 0 };
 }
 

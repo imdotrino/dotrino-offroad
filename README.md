@@ -39,13 +39,18 @@ Analítica: GoatCounter sin cookies, autohospedado, solo en producción.
 
 ## Desarrollo
 
-Vite sin framework. Resolución interna 456×240, todo dibujado por código (sin imágenes): el mundo es un plano con
+Vite sin framework. Resolución interna 456×262, todo dibujado por código (sin imágenes): el mundo es un plano con
 alturas que `render.js` proyecta en **perspectiva caballera** (lo ancho tal cual, el fondo
 aplastado y corrido a la derecha, la altura hacia arriba), como las máquinas de antes.
 
-La pista tiene **varios niveles**: además de lomas, montículos y rampas, hay tramos enteros en
-alto (mesetas, con su valla y su talud), a los que se sube por una cuesta y de los que se sale
-por otra o por un corte del que se cae volando.
+La pista se levanta por **módulos de altura**: cada esquina del trazado es un bloque a 0, 1 o 2
+pisos (15 unidades por piso) y cada recta une dos. Si están al mismo piso la recta es llana; si
+no, lleva una rampa empinada a media recta o, al bajar, un corte del que se cae volando. Cada
+bloque sube entero, con su valla, y por fuera queda el talud vertical. La salida va siempre a
+ras de suelo y las diagonales de un cruce también.
+
+Las sombras salen de las alturas (luz del noroeste): una valla, una roca, un talud o el borde
+de una rampa arrojan una sombra tan larga como altos son.
 
 ```bash
 npm install
@@ -63,8 +68,8 @@ npm run test:e2e   # Playwright sobre el build
 | `src/race.js` | Pantalla de carrera: bucle, mandos y marcador |
 | `src/main.js` | Mapa, taller, resultado y compartir |
 
-La pista tiene las **esquinas cuadradas**, por fuera y por dentro: la franja se mide con
-distancia «de cuadrado» al polígono (`buildField`), no con distancia normal, que las redondea.
+La pista tiene lados rectos y las **esquinas cortadas a 45°**, por fuera y por dentro: la
+franja se mide con distancia «de octógono» al polígono (`buildField`).
 La trazada por la que se mide el avance y conduce la máquina sí va redondeada.
 
 Las pistas se **arman por piezas** a partir de una semilla (`generateLayout` en `src/track.js`):

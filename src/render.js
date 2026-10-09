@@ -7,10 +7,10 @@ import { W, H, rng, heightAt, RAMP_LEN } from './track.js';
 
 const SHEAR = 0.2;             // cuánto se corre a la derecha cada unidad de fondo
 export const SW = W + Math.ceil(SHEAR * H) + 1;    // tamaño de la pantalla (lienzo)
-export const SH = 240;
+export const SH = 262;
 const KY = 0.62;               // cuánto se aplasta el fondo
 const KZ = 0.8;                // cuánto sube en pantalla una unidad de altura
-const OFF = 19;                // margen de arriba, para lo que sobresale
+const OFF = 40;                // margen de arriba, para lo que sobresale
 const WALL_H = 5;
 
 /** Del mundo (x, y, altura) a la fila de la pantalla. La columna es la misma x. */
@@ -34,6 +34,15 @@ const hash = (x, y) => {
   h = (h ^ (h >>> 13)) * 1274126177 | 0;
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 };
+
+/** Ruido suave (manchas) a la escala `s`: interpola el ruido de una rejilla. */
+function blotch (x, y, s) {
+  const gx = x / s, gy = y / s, x0 = Math.floor(gx), y0 = Math.floor(gy);
+  let fx = gx - x0, fy = gy - y0;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  const a = hash(x0, y0), b = hash(x0 + 1, y0), c = hash(x0, y0 + 1), d = hash(x0 + 1, y0 + 1);
+  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+}
 
 // Adornos del terreno (fuera de la pista). Letras → color.
 const DECO = {
@@ -64,14 +73,21 @@ export function paintTrack (track, regionKey) {
       if (d < -1) {
         let k = 1;
         if (d > -3) k = 0.86;                              // tierra apelmazada junto a la valla
-        if (n > 0.93) k *= 0.9; else if (n < 0.05) k *= 1.07;
+        // Textura de tierra: manchas grandes, grano fino y piedritas.
+        k *= 0.9 + 0.2 * blotch(x, y, 11) + 0.08 * (blotch(x + 40, y + 9, 4) - 0.5);
+        if (n > 0.95) k *= 0.84; else if (n < 0.04) k *= 1.12;
+        // Rodadas: surcos que siguen la pista, entrecortados.
+        const fn = track.near[y * W + x], q = track.samples[Math.floor(fn) % track.n];
+        const lat = -(x - q.x) * q.ty + (y - q.y) * q.tx;
+        const rut = Math.sin(lat * 0.62 + blotch(fn * 4, 7, 26) * 5);
+        if (rut > 0.9 && blotch(fn * 4, lat, 9) > 0.42) k *= 0.88; else if (rut < -0.94 && blotch(fn * 4 + 50, lat, 9) > 0.5) k *= 1.06;
         set(x, y, n2 < 0.5 ? pal.track : pal.track2, k);
       } else if (d < 1.5) {
         // Franjas a lo largo de la valla (no un ajedrezado suelto): siguen la pista.
         const block = Math.floor(track.near[y * W + x] * 4 / 7) & 1;
         set(x, y, block ? pal.wallA : pal.wallB, d >= 0.8 ? 0.85 : 1.06);
       } else {
-        let k = d < 5.5 ? 0.82 : 1;
+        let k = 0.93 + 0.14 * blotch(x + 99, y + 31, 14);
         if (n > 0.975) k *= 1.1; else if (n < 0.03) k *= 0.9;
         set(x, y, n2 < 0.55 ? pal.out : pal.out2, k);
       }
@@ -101,17 +117,9 @@ export function paintTrack (track, regionKey) {
   });
   // Lo que está en alto va un poco más claro, para que los niveles se distingan.
   for (let k = 0; k < W * H; k++) {
-    if (track.field[k] >= half - 1 || !track.levels.length) continue;
+    if (track.field[k] >= half - 1) continue;
     const lv = track.level[Math.floor(track.near[k]) % track.n];
-    if (lv > 0.5) mul(k % W, (k / W) | 0, 1 + Math.min(0.16, lv * 0.012));
-  }
-  // Sombra de la valla sobre la pista (la luz viene del noroeste).
-  for (let y = 3; y < H; y++) {
-    for (let x = 3; x < W; x++) {
-      if (track.field[y * W + x] >= half - 1) continue;
-      if (track.field[(y - 3) * W + x - 3] >= half - 1) mul(x, y, 0.76);
-      else if (track.field[(y - 5) * W + x - 5] >= half - 1) mul(x, y, 0.9);
-    }
+    if (lv > 0.5) mul(k % W, (k / W) | 0, 1 + Math.min(0.2, lv * 0.007));
   }
   // Rampas: un montículo de la misma tierra, que se lee desde cualquier lado: se aclara al
   // subir, la cresta va marcada y justo detrás queda la sombra de la caída.
@@ -154,6 +162,35 @@ export function paintTrack (track, regionKey) {
     }
   }
 
+  // Altura total de cada punto: el suelo más lo que tenga encima (valla o roca).
+  const total = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    const d = track.field[i] - half;
+    total[i] = track.height[i] + (d >= -1 && d < 1.5 ? WALL_H : rise[i]);
+  }
+  // SOMBRAS ARROJADAS. La luz viene del noroeste y a media altura: un punto queda en sombra
+  // si, mirando hacia la luz, algo sube más de lo que se aleja. Sirve igual para una valla,
+  // una roca, el talud de un nivel o el borde de una rampa, y la sombra es tan larga como alto
+  // es lo que la arroja. El borde va en penumbra.
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      let shade = 0;
+      for (let k = 1; k <= 26 && x - k >= 0 && y - k >= 0; k++) {
+        const over = total[i - k * W - k] - total[i] - k * 0.95;
+        if (over > 0) { shade = Math.max(shade, Math.min(1, over / 2)); if (shade >= 1) break; }
+      }
+      if (shade) mul(x, y, 1 - 0.36 * shade);
+    }
+  }
+  // Y un filo de luz en el canto de arriba de cada bloque.
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      if (total[i] - total[i + W + 1] > 3 && total[i] - total[i - W - 1] < 1) mul(x, y, 1.13);
+    }
+  }
+
   // 2) Luz: lo que mira al noroeste se aclara y lo que le da la espalda se oscurece. Es lo
   //    que hace que una loma se lea como loma.
   const hg = track.height;
@@ -178,8 +215,8 @@ export function paintTrack (track, regionKey) {
     }
   }
   // Graderías en la esquina de arriba a la izquierda, que la perspectiva deja libre.
-  for (let r = 4; r < 104; r++) {
-    const edge = Math.round(screenX(0, (r - OFF) / KY)) - 14 - Math.round((104 - r) * 0.1);
+  for (let r = 4; r < 124; r++) {
+    const edge = Math.round(screenX(0, (r - OFF) / KY)) - 14 - Math.round((124 - r) * 0.1);
     for (let x = 0; x < edge; x++) {
       const o = (r * SW + x) * 4, step = (r + Math.round(x * 0.31)) % 7;
       let c = step < 2 ? [92, 96, 112] : [214, 218, 226];
@@ -191,11 +228,6 @@ export function paintTrack (track, regionKey) {
   // De qué punto del mundo (su y) es cada píxel del terreno: con eso una valla o un nivel
   // que quedan delante tapan a la camioneta (drawRace).
   const depth = new Uint16Array(SW * SH);
-  const total = new Float32Array(W * H);
-  for (let i = 0; i < W * H; i++) {
-    const d = track.field[i] - half;
-    total[i] = hg[i] + (d >= -1 && d < 1.5 ? WALL_H : rise[i]);
-  }
   for (let y = 0; y < H; y++) {
     const shift = Math.round(screenX(0, y));
     const baseRow = Math.min(SH - 1, Math.round(screenY(y, 0)));
@@ -275,8 +307,9 @@ export const TRUCK_COLORS = {
   black: { B: '#3a3540', D: '#15121a', h: '#8a8296' },
 };
 export const FRAMES = 32;
-const SP = 24;        // lado del cuadro de cada sprite
-const AY = 14;        // fila del cuadro donde pisa el centro de la camioneta
+const TS = 2;        // escala de la camioneta respecto al modelo de cubitos
+const SP = 46;        // lado del cuadro de cada sprite
+const AY = 29;        // fila del cuadro donde pisa el centro de la camioneta
 
 const shade = (hex, k) => {
   const n = parseInt(hex.slice(1), 16);
@@ -297,9 +330,9 @@ function truckFrames (color) {
     // Cada cubito se parte en cuatro para no dejar huecos al girar.
     const dots = [];
     for (const vx of MODEL) {
-      for (const ox of [0.25, 0.75]) for (const oy of [0.25, 0.75]) {
-        const lx = vx.x + ox - 6.5, ly = vx.y + oy - 3.5;
-        dots.push({ rx: lx * ca - ly * sa, ry: lx * sa + ly * ca, z: vx.z, c: vx.c });
+      for (const ox of [0.13, 0.38, 0.63, 0.88]) for (const oy of [0.13, 0.38, 0.63, 0.88]) for (const oz of [0.5, 1]) {
+        const lx = (vx.x + ox - 6.5) * TS, ly = (vx.y + oy - 3.5) * TS;
+        dots.push({ rx: lx * ca - ly * sa, ry: lx * sa + ly * ca, z: (vx.z + oz) * TS - 1, c: vx.c });
       }
     }
     dots.sort((p, q) => (p.ry - q.ry) || (p.z - q.z));     // del fondo al frente, de abajo arriba
@@ -331,7 +364,7 @@ export function makeSprites () {
     const ctx = cv.getContext('2d');
     const a = (f / FRAMES) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
     ctx.fillStyle = 'rgba(0,0,0,.34)';
-    for (let lx = -7; lx <= 7; lx += 0.5) for (let ly = -4; ly <= 4; ly += 0.5) {
+    for (let lx = -7 * TS; lx <= 7 * TS; lx += 0.5) for (let ly = -4 * TS; ly <= 4 * TS; ly += 0.5) {
       ctx.clearRect(Math.round(SP / 2 + lx * ca - ly * sa - (lx * sa + ly * ca) * SHEAR), Math.round(AY + (lx * sa + ly * ca) * KY), 1, 1);
       ctx.fillRect(Math.round(SP / 2 + lx * ca - ly * sa - (lx * sa + ly * ca) * SHEAR), Math.round(AY + (lx * sa + ly * ca) * KY), 1, 1);
     }
@@ -409,7 +442,7 @@ export function drawRace (ctx, bg, race, sprites, fx, t) {
   // Flecha sobre el jugador al arrancar, para que sepa cuál es la suya.
   const me = race.trucks[0];
   if ((race.state === 'countdown' || race.t < 2.5) && Math.floor(t * 5) % 2) {
-    const ax = Math.round(screenX(me.x, me.y)), ay = Math.round(screenY(me.y, ground(me.x, me.y))) - 17;
+    const ax = Math.round(screenX(me.x, me.y)), ay = Math.round(screenY(me.y, ground(me.x, me.y) + me.z)) - 31;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(ax - 2, ay, 5, 1); ctx.fillRect(ax - 1, ay + 1, 3, 1); ctx.fillRect(ax, ay + 2, 1, 1);
   }
@@ -419,7 +452,7 @@ export function drawRace (ctx, bg, race, sprites, fx, t) {
 export function emitParticles (race, fx, dust) {
   for (const tr of race.trucks) {
     const speed = Math.hypot(tr.vx, tr.vy);
-    const bx = tr.x - Math.cos(tr.a) * 6, by = tr.y - Math.sin(tr.a) * 6;
+    const bx = tr.x - Math.cos(tr.a) * 13, by = tr.y - Math.sin(tr.a) * 13;
     if (tr.nitroT > 0) {
       for (let i = 0; i < 2; i++) fx.parts.push({ x: bx + Math.random() * 3 - 1.5, y: by + Math.random() * 3 - 1.5, z: tr.z + 2, vz: 0, vx: -tr.vx * 0.2, vy: -tr.vy * 0.2, life: 0.22, max: 0.22, size: 2, color: Math.random() < 0.5 ? '#ffd040' : '#ff6a20' });
     } else if (!tr.air && speed > 25 && Math.random() < 0.35) {

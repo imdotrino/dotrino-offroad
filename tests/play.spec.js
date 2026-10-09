@@ -47,6 +47,9 @@ test('correr: la camioneta avanza con el teclado, gasta nitro y el podio da estr
   await expect(page.getByTestId('result')).toBeVisible()
   await expect(page.getByTestId('result-place')).toHaveText('1.º')
   await expect(page.getByTestId('result-prize')).toHaveText('$100.000')
+  // Las tres estrellas del primer puesto se ven encendidas (doradas), no grises.
+  await expect(page.locator('.win-stars .ns.on')).toHaveCount(3)
+  expect(await page.locator('.win-stars .ns.on').first().evaluate(el => getComputedStyle(el).color)).toBe('rgb(251, 191, 36)')
   const p = await page.evaluate(() => window.__offroad.progress)
   expect(p.nodes.n0).toMatchObject({ done: true, stars: 3 })
   expect(p.money).toBe(160000)

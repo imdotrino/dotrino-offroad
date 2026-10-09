@@ -204,6 +204,8 @@ body.mode-race dotrino-topbar { display: none; }
 .win-stars { gap: 10px; margin: 8px 0 2px; }
 .win-stars .ns { color: var(--border); line-height: 0; }
 .win-stars .ns svg { width: 38px; height: 38px; }
+/* Con la misma fuerza que la regla de arriba ganaba el gris: las estrellas ganadas no se encendían. */
+.win-stars .ns.on { color: var(--gold); filter: drop-shadow(0 0 6px rgba(251, 191, 36, .45)); }
 .win-meta { display: flex; justify-content: center; gap: 22px; margin: 14px 0 4px; }
 .win-meta .k { font-size: .64rem; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
 .win-meta .v { font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; }

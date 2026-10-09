@@ -34,7 +34,7 @@ for (let i = 0; i < LAYOUTS.length; i++) {
     // La pista entera (con su valla) cabe en el mundo, y dos tramos no se pisan salvo en un cruce.
     for (const q of t.samples) assert.ok(q.x > t.half + 4 && q.x < W - t.half - 4 && q.y > t.half + 4 && q.y < H - t.half - 4, `${t.name}: track leaves the world at ${q.x.toFixed(0)},${q.y.toFixed(0)}`);
     // La trazada redondea las esquinas, así que se separa un poco del eje del polígono.
-    for (const s of t.samples) assert.ok(distAt(t, s.x, s.y) < 14, `${t.name}: racing line strays from the track axis`);
+    for (const s of t.samples) assert.ok(distAt(t, s.x, s.y) < t.half * 0.75, `${t.name}: racing line strays from the track axis`);
     assert.ok(t.bumps.length >= 1, `${t.name}: bumps`);
     assert.ok(t.ramps.length >= 1, `${t.name}${reversed ? ' rev' : ''}: no straight long enough for a ramp`);
     assert.ok(t.samples[0].curv < 0.45, `${t.name}: start line is not on a straight (${t.samples[0].curv.toFixed(2)})`);
@@ -104,13 +104,13 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
 // 2b. Entre camionetas la caja de choque es la mitad del dibujo (13 de largo): se solapan al
 //     rozarse, pero no se atraviesan, y el choque se anuncia.
 {
-  const track = buildTrack({ layout: 6, seed: 1, bumps: 0, puddles: 0, rocks: 0, mounds: 0, whoops: 0, hills: 0, ramps: 0 });   // pista lisa
+  const track = buildTrack({ layout: 6, seed: 1, bumps: 0, puddles: 0, rocks: 0, mounds: 0, whoops: 0, hills: 0, ramps: 0, maxLevel: 0 });   // pista lisa
   const up = { tires: 0, shocks: 0, accel: 0, speed: 0 };
   const race = createRace({ track, trucks: [{ ai: false, up }, { ai: false, up }], laps: 3, seed: 1 });
   race.state = 'racing';
   const [a, b] = race.trucks, s0 = track.samples[track.n - 12];
-  a.x = s0.x - 12; a.y = s0.y; a.vx = 60; a.vy = 0; a.a = 0;
-  b.x = s0.x + 12; b.y = s0.y; b.vx = -60; b.vy = 0; b.a = Math.PI;
+  a.x = s0.x - 20; a.y = s0.y; a.vx = 60; a.vy = 0; a.a = 0;
+  b.x = s0.x + 20; b.y = s0.y; b.vx = -60; b.vy = 0; b.a = Math.PI;
   for (const t of [a, b]) { t.g = t.alt = 0; t.rate = 0; }
   let closest = 99, crashed = false, bounced = false;
   for (let i = 0; i < 40; i++) {
@@ -120,38 +120,50 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
     if (race.events.some(e => e.type === 'crash')) { crashed = true; bounced = a.vx < 0 && b.vx > 0; }
     race.events.length = 0;
   }
-  assert.ok(closest < 9 && closest > 5, `trucks should overlap about half their length, got ${closest.toFixed(1)}`);
+  assert.ok(closest < 16 && closest > 10, `trucks should overlap about half their length (26 px), got ${closest.toFixed(1)}`);
   assert.ok(crashed, 'a head-on hit must raise a crash event');
   assert.ok(bounced, 'trucks must bounce back');
 }
 
 // 2c. Una roca es sólida: la camioneta que va de frente no la atraviesa.
 {
-  const track = buildTrack({ layout: 6, seed: 3, bumps: 0, puddles: 0, rocks: 1, mounds: 0, whoops: 0, hills: 0, ramps: 0 });
+  const track = buildTrack({ layout: 6, seed: 3, bumps: 0, puddles: 0, rocks: 1, mounds: 0, whoops: 0, hills: 0, ramps: 0, maxLevel: 0 });
   const up = { tires: 0, shocks: 0, accel: 0, speed: 0 };
   const race = createRace({ track, trucks: [{ ai: false, up }], laps: 3, seed: 1 });
   race.state = 'racing';
   const [a] = race.trucks, r = track.rocks[0];
-  a.x = r.x - 20; a.y = r.y; a.vx = 70; a.vy = 0; a.a = 0;
+  a.x = r.x - 26; a.y = r.y; a.vx = 70; a.vy = 0; a.a = 0;
   let closest = 99;
   for (let i = 0; i < 30; i++) {
     step(race, 1 / 60, { steer: 0, gas: true, brake: false, nitro: false });
     race.over = false;
     closest = Math.min(closest, Math.hypot(a.x - r.x, a.y - r.y));
   }
-  assert.ok(closest >= r.r + 2.9, `truck went through a rock (${closest.toFixed(1)} < ${(r.r + 3).toFixed(1)})`);
+  assert.ok(closest >= r.r + 6.9, `truck went through a rock (${closest.toFixed(1)} < ${(r.r + 7).toFixed(1)})`);
 }
 
-// 2d. Niveles: un tramo entero queda en alto (con su valla), y del corte se sale volando.
+// 2d. Niveles por módulos: la salida va a ras de suelo, hay tramos a uno y dos pisos, el suelo
+//     de la pista está a la altura de su módulo, y hay cortes.
 {
-  const track = buildTrack({ layout: 6, seed: 5, bumps: 0, puddles: 0, rocks: 0, mounds: 0, whoops: 0, hills: 0, ramps: 0, levels: 1 });
-  assert.equal(track.levels.length, 1);
-  const l = track.levels[0], mid = track.samples[l.a + Math.floor(l.len * 0.7)];
-  assert.ok(Math.abs(distAt(track, mid.x, mid.y)) < 14);
-  const hMid = track.height[Math.round(mid.y) * W + Math.round(mid.x)];
-  assert.ok(hMid > l.h * 0.9, `plateau should be at its level (${hMid.toFixed(1)} of ${l.h.toFixed(1)})`);
-  const before = track.samples[l.a - 6];
-  assert.ok(track.height[Math.round(before.y) * W + Math.round(before.x)] < 1, 'ground before the level must be flat');
+  let high = 0, twoFloors = 0, withDrop = 0;
+  for (let seed = 1; seed <= 24; seed++) {
+    const t = buildTrack({ seed: seed * 104729, size: 5 + seed % 3, bumps: 0, puddles: 0, rocks: 0, mounds: 0, whoops: 0, hills: 0, ramps: 0, maxLevel: 2 });
+    assert.equal(t.level[0], 0, `gen ${seed}: start line must be at ground level`);
+    const top = Math.max(...t.level);
+    if (top >= 15) high++;
+    if (top >= 30) twoFloors++;
+    if (t.drops.length) withDrop++;
+    for (let i = 0; i < t.n; i += 7) {
+      const q = t.samples[i], h = t.height[Math.round(q.y) * W + Math.round(q.x)];
+      const lo = Math.min(t.level[i], t.level[(i + 3) % t.n], t.level[(i + t.n - 3) % t.n]) - 1.5;
+      const hi = Math.max(t.level[i], t.level[(i + 3) % t.n], t.level[(i + t.n - 3) % t.n]) + 1.5;
+      if (!t.crossed) assert.ok(h >= lo && h <= hi, `gen ${seed}: ground at ${h.toFixed(1)} but module level is ${t.level[i].toFixed(1)}`);
+    }
+  }
+  assert.ok(high >= 18, `only ${high}/24 tracks have a raised stretch`);
+  assert.ok(twoFloors >= 6, `only ${twoFloors}/24 tracks reach the second floor`);
+  assert.ok(withDrop >= 8, `only ${withDrop}/24 tracks have a drop`);
+  console.log(`levels: ${high}/24 raised · ${twoFloors}/24 two floors · ${withDrop}/24 with a drop`);
 }
 
 // 3. Determinista: misma semilla, mismo resultado.

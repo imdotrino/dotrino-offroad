@@ -3,10 +3,10 @@
 import { rng, distAt, heightAt, W, H } from './track.js';
 
 export const MAX_LEVEL = 6;
-const TRUCK_R = 5;          // radio de choque de una camioneta contra las vallas
+const TRUCK_R = 9;          // radio de choque de una camioneta contra las vallas
 // Entre camionetas la caja de choque es la MITAD del dibujo: se meten una en otra al rozarse,
 // pero el golpe se nota (rebote, chispas y sonido).
-const CAR_R = 3.25;
+const CAR_R = 6.5;
 const GRAVITY = 175;        // baja: los saltos son largos, como en las máquinas de antes
 const LAUNCH = 1.6;         // cuánto exagera el despegue la subida que traía
 const VZ_MAX = 72;
@@ -40,10 +40,10 @@ export function createRace ({ track, trucks, laps, seed, grip = 1 }) {
   const n = track.n;
   // Parrilla: de dos en dos, detrás de la línea (muestra 0).
   const list = trucks.map((t, k) => {
-    const back = 6 + Math.floor(k / 2) * 5;
+    const back = 9 + Math.floor(k / 2) * 9;
     const i = (n - back) % n;
     const s = track.samples[i];
-    const side = (k % 2 ? 1 : -1) * 14;
+    const side = (k % 2 ? 1 : -1) * 16;
     return {
       k, ai: !!t.ai, color: t.color || 'red', boss: !!t.boss,
       stats: statsFor(t.up), skill: t.skill ?? 1,
@@ -84,7 +84,7 @@ function aiControl (race, tr) {
   // El punto al que apunta tiene que quedar con margen de las vallas: en una esquina cuadrada
   // el carril de fuera cae dentro de la pared, así que se va cerrando hacia la trazada.
   let tx = tgt.x - tgt.ty * lane, ty = tgt.y + tgt.tx * lane;
-  for (let k = 0; k < 4 && distAt(track, tx, ty) > track.half - 10; k++) {
+  for (let k = 0; k < 4 && distAt(track, tx, ty) > track.half - 15; k++) {
     lane *= 0.5;
     tx = tgt.x - tgt.ty * lane; ty = tgt.y + tgt.tx * lane;
   }
@@ -94,7 +94,7 @@ function aiControl (race, tr) {
   const hx = Math.cos(tr.a), hy = Math.sin(tr.a);
   for (const r of track.rocks) {
     const rx = r.x - tr.x, ry = r.y - tr.y, fwd = rx * hx + ry * hy, side = -rx * hy + ry * hx;
-    if (fwd > 0 && fwd < 36 && Math.abs(side) < r.r + 7) { steer = side > 0 ? -1 : 1; break; }
+    if (fwd > 0 && fwd < 36 && Math.abs(side) < r.r + 12) { steer = side > 0 ? -1 : 1; break; }
   }
   // Frena si viene una curva cerrada y va rápido para ella: mira la más cerrada del tramo que viene.
   let curv = 0;
@@ -174,7 +174,7 @@ function stepTruck (race, tr, input, dt) {
   // Rocas: sólidas, salvo que se pase volando por encima.
   if (tr.z < 5) {
     for (const r of track.rocks) {
-      const dx = tr.x - r.x, dy = tr.y - r.y, dd = Math.hypot(dx, dy), min = r.r + 3;
+      const dx = tr.x - r.x, dy = tr.y - r.y, dd = Math.hypot(dx, dy), min = r.r + 7;
       if (dd >= min || dd === 0) continue;
       const nx = dx / dd, ny = dy / dd;
       tr.x += nx * (min - dd); tr.y += ny * (min - dd);
@@ -281,7 +281,7 @@ function stepPickup (race, dt) {
   p.ttl -= dt;
   for (const tr of race.trucks) {
     if (tr.finished || tr.z > 3) continue;
-    if (Math.hypot(tr.x - p.x, tr.y - p.y) < 8) {
+    if (Math.hypot(tr.x - p.x, tr.y - p.y) < 13) {
       if (p.type === 'nitro') tr.nitro++; else tr.cash++;
       race.events.push({ type: 'pickup', k: tr.k, what: p.type });
       p.ttl = 0; break;
