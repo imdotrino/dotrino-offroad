@@ -19,9 +19,9 @@ const DICT = {
     place1: '1.º', place2: '2.º', place3: '3.º', place4: '4.º',
     pause: 'Pausa', paused: 'En pausa', resume: 'Seguir', restart: 'Reiniciar carrera',
     exitRace: 'Salir de la carrera', soundOn: 'Sonido: activado', soundOff: 'Sonido: apagado',
-    gas: 'GAS', nitro: 'Nitro', steerLeft: 'Girar a la izquierda', steerRight: 'Girar a la derecha',
+    gas: 'GAS', brake: 'FRENO', nitro: 'Nitro', wheel: 'Volante',
     helpKeys: '← → girar · ↑ acelerar · ↓ frenar · Espacio nitro',
-    helpTouch: '◀ ▶ girar · GAS acelerar · N nitro',
+    helpTouch: 'Desliza el volante a los lados · pedal GAS · N nitro',
     rotateHint: 'gira el teléfono para verla más grande',
 
     // Resultado
@@ -63,9 +63,9 @@ const DICT = {
     place1: '1st', place2: '2nd', place3: '3rd', place4: '4th',
     pause: 'Pause', paused: 'Paused', resume: 'Resume', restart: 'Restart race',
     exitRace: 'Leave race', soundOn: 'Sound: on', soundOff: 'Sound: off',
-    gas: 'GAS', nitro: 'Nitro', steerLeft: 'Steer left', steerRight: 'Steer right',
+    gas: 'GAS', brake: 'BRAKE', nitro: 'Nitro', wheel: 'Steering wheel',
     helpKeys: '← → steer · ↑ gas · ↓ brake · Space nitro',
-    helpTouch: '◀ ▶ steer · GAS to accelerate · N nitro',
+    helpTouch: 'Slide the wheel sideways · GAS pedal · N nitro',
     rotateHint: 'turn your phone for a bigger view',
 
     youFinished: 'You finished {p}', bossBeaten: 'Boss beaten!',

@@ -56,29 +56,80 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
   const big = h('div', { class: 'race-big', 'data-testid': 'race-big' });
   const note = h('div', { class: 'race-note' });
 
-  // Mandos táctiles: girar a la izquierda, y gas + nitro a la derecha.
+  // ---------- Mandos: el giro es ANALÓGICO (de -1 a 1) ----------
+  // Tres fuentes, por este orden: el volante táctil, la palanca de un mando de juego, y el
+  // teclado, que no salta de 0 a tope sino que gira el volante poco a poco.
   const input = { steer: 0, gas: false, brake: false, nitro: false };
   const held = { left: false, right: false, gas: false, brake: false, nitro: false };
+  let wheelAxis = null;      // lo que marca el volante mientras se toca
+  let keySteer = 0;          // el volante «virtual» del teclado
+  let padState = { steer: 0, gas: false, brake: false, nitro: false };
   // Un toque de nitro más corto que un cuadro no se puede perder: queda apuntado hasta que
   // la simulación da un paso.
-  let nitroTap = false;
-  const sync = () => {
-    input.steer = (held.right ? 1 : 0) - (held.left ? 1 : 0);
-    input.gas = held.gas; input.brake = held.brake; input.nitro = held.nitro || nitroTap;
-  };
+  let nitroTap = false, padNitroWas = false, padPauseWas = false;
+  function readGamepad () {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (const gp of pads) {
+      if (!gp || !gp.connected) continue;
+      const b = (k) => !!gp.buttons[k] && (gp.buttons[k].pressed || gp.buttons[k].value > 0.25);
+      const ax = gp.axes[0] || 0;
+      const steer = (Math.abs(ax) < 0.12 ? 0 : (ax - Math.sign(ax) * 0.12) / 0.88) + (b(15) ? 1 : 0) - (b(14) ? 1 : 0);
+      const pause = b(9);
+      if (pause && !padPauseWas && !ended) setPaused(!paused);
+      padPauseWas = pause;
+      return { steer: Math.max(-1, Math.min(1, steer)), gas: b(7) || b(0), brake: b(6) || b(1), nitro: b(2) || b(5) };
+    }
+    return { steer: 0, gas: false, brake: false, nitro: false };
+  }
+  function readInput (el) {
+    const target = (held.right ? 1 : 0) - (held.left ? 1 : 0);
+    // El teclado gira rápido hacia el lado pulsado y vuelve solo al centro al soltar.
+    const rate = (target === 0 || Math.sign(target) !== Math.sign(keySteer) ? 9 : 5.5) * el;
+    keySteer += Math.max(-rate, Math.min(rate, target - keySteer));
+    padState = readGamepad();
+    if (padState.nitro && !padNitroWas) nitroTap = true;
+    padNitroWas = padState.nitro;
+    input.steer = wheelAxis != null ? wheelAxis : padState.steer !== 0 ? padState.steer : keySteer;
+    input.gas = held.gas || padState.gas; input.brake = held.brake || padState.brake;
+    input.nitro = held.nitro || padState.nitro || nitroTap;
+  }
   const pad = (key, label, cls, aria) => {
     const b = h('button', { class: 'pad ' + cls, 'data-testid': 'pad-' + key, 'aria-label': aria }, label);
-    const on = (e) => { e.preventDefault(); held[key] = true; if (key === 'nitro') nitroTap = true; b.classList.add('on'); sync(); try { b.setPointerCapture(e.pointerId); } catch { /* sin captura */ } };
-    const off = (e) => { e.preventDefault(); held[key] = false; b.classList.remove('on'); sync(); };
+    const on = (e) => { e.preventDefault(); held[key] = true; if (key === 'nitro') nitroTap = true; b.classList.add('on'); try { b.setPointerCapture(e.pointerId); } catch { /* sin captura */ } };
+    const off = (e) => { e.preventDefault(); held[key] = false; b.classList.remove('on'); };
     b.addEventListener('pointerdown', on);
     b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off);
     b.addEventListener('contextmenu', e => e.preventDefault());
     return b;
   };
+  // Volante: una zona ancha; el dedo más a la derecha o a la izquierda del centro gira más.
+  const wheelArt = h('div', { class: 'wheel-art', html: '<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" stroke-width="11"/><circle cx="50" cy="50" r="11" fill="currentColor"/><path d="M50 50 L11 44 M50 50 L89 44 M50 50 L50 91" stroke="currentColor" stroke-width="9" stroke-linecap="round"/><rect x="46" y="4" width="8" height="12" rx="2" fill="#f08a24"/></svg>' });
+  const wheel = h('div', { class: 'wheel', 'data-testid': 'wheel', role: 'slider', 'aria-label': t('wheel'), 'aria-valuemin': '-100', 'aria-valuemax': '100', 'aria-valuenow': '0' }, wheelArt);
+  const turnWheel = (v) => {
+    wheelAxis = v;
+    wheelArt.style.transform = `rotate(${(v || 0) * 110}deg)`;
+    wheel.setAttribute('aria-valuenow', String(Math.round((v || 0) * 100)));
+  };
+  const wheelMove = (e) => {
+    e.preventDefault();
+    const r = wheel.getBoundingClientRect();
+    const v = (e.clientX - (r.left + r.width / 2)) / (r.width * 0.4);
+    turnWheel(Math.max(-1, Math.min(1, v)));
+  };
+  let wheelPointer = null;
+  wheel.addEventListener('pointerdown', (e) => { wheelPointer = e.pointerId; try { wheel.setPointerCapture(e.pointerId); } catch { /* sin captura */ } wheelMove(e); });
+  wheel.addEventListener('pointermove', (e) => { if (e.pointerId === wheelPointer) wheelMove(e); });
+  const wheelUp = (e) => { if (e.pointerId !== wheelPointer) return; wheelPointer = null; turnWheel(null); };
+  wheel.addEventListener('pointerup', wheelUp); wheel.addEventListener('pointercancel', wheelUp);
+  wheel.addEventListener('contextmenu', e => e.preventDefault());
+
   const touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   const pads = h('div', { class: 'race-pads' + (touch ? '' : ' hidden') },
-    h('div', { class: 'pads-l' }, pad('left', '◀', 'steer', t('steerLeft')), pad('right', '▶', 'steer', t('steerRight'))),
-    h('div', { class: 'pads-r' }, pad('nitro', 'N', 'nitro', t('nitro')), pad('gas', t('gas'), 'gas', t('gas'))),
+    h('div', { class: 'pads-l' }, wheel),
+    h('div', { class: 'pads-r' },
+      pad('nitro', 'N', 'nitro', t('nitro')),
+      pad('brake', t('brake'), 'pedal brake', t('brake')),
+      pad('gas', t('gas'), 'pedal gas', t('gas'))),
   );
 
   // Pausa
@@ -100,7 +151,7 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
   // de sus esquinas.
   function layout () {
     const portrait = stage.clientHeight > stage.clientWidth * 1.1;
-    const vw = stage.clientWidth, vh = stage.clientHeight - hud.offsetHeight - (touch && portrait ? 118 : 0);
+    const vw = stage.clientWidth, vh = stage.clientHeight - hud.offsetHeight - (touch && portrait ? 190 : 0);
     const s = Math.min(vw / W, vh / H);
     wrap.style.width = cv.style.width = W * s + 'px';
     wrap.style.height = cv.style.height = H * s + 'px';
@@ -121,7 +172,7 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
     const k = KEYS[e.key];
     if (!k) return;
     e.preventDefault();
-    held[k] = down; if (down && k === 'nitro') nitroTap = true; sync();
+    held[k] = down; if (down && k === 'nitro') nitroTap = true;
   };
   const kd = onKey(true), ku = onKey(false);
   window.addEventListener('keydown', kd); window.addEventListener('keyup', ku);
@@ -144,6 +195,14 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
       else if (ev.type === 'nitro' && mine) audio.noise(0.5, 0.09, 2400);
       else if (ev.type === 'land' && mine) audio.noise(0.1, 0.07, 500);
       else if (ev.type === 'hit' && mine) audio.noise(0.12, 0.08, 800);
+      else if (ev.type === 'crash') {
+        // Chispas donde se tocan, para que el choque se vea aunque las camionetas se solapen.
+        for (let i = 0; i < 7; i++) {
+          const a = Math.random() * Math.PI * 2, v = 14 + Math.random() * 22;
+          fx.parts.push({ x: ev.x, y: ev.y, z: ev.z + 3, vz: 18 + Math.random() * 14, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.3, max: 0.3, size: 1, color: Math.random() < 0.5 ? '#ffffff' : '#ffd040' });
+        }
+        if (ev.k === 0 || ev.j === 0) { audio.noise(0.09, Math.min(0.12, 0.04 + ev.force / 500), 1500); audio.beep(140, 0.07, 'square', 0.04); }
+      }
       else if (ev.type === 'pickup' && mine) { audio.beep(660, 0.08); setTimeout(() => audio.beep(990, 0.12), 80); }
       else if (ev.type === 'lap' && mine) audio.beep(520, 0.1, 'triangle');
     }
@@ -178,10 +237,11 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
     last = now;
     if (!paused) {
       clock += el; acc += el;
+      readInput(el);
       if (shownGo > 0) shownGo -= el;
       while (acc >= DT) {
         if (!race.over) step(race, DT, input);
-        if (nitroTap && race.state === 'racing') { nitroTap = false; sync(); }
+        if (nitroTap && race.state === 'racing') { nitroTap = false; input.nitro = held.nitro || padState.nitro; }
         stepParticles(fx, DT);
         acc -= DT;
       }
@@ -213,7 +273,7 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
     pause: () => setPaused(true),
     // Solo para las pruebas E2E: estado de la carrera y forzar el final.
     get race () { return race; },
-    input: held, sync,
+    input, held,
     forceFinish (place) {
       const me = race.trucks[0];
       const order = race.trucks.filter(x => x !== me);

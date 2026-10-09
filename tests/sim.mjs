@@ -30,6 +30,7 @@ for (let i = 0; i < LAYOUTS.length; i++) {
     assert.ok(t.n > 120, `${t.name}: too short (${t.n})`);
     for (const s of t.samples) assert.ok(distAt(t, s.x, s.y) < 1.5, `${t.name}: sample off its own axis`);
     assert.equal(t.bumps.length, 3, `${t.name}: bumps`);
+    assert.ok(t.ramps.length >= 1, `${t.name}${reversed ? ' rev' : ''}: no straight long enough for a ramp`);
     assert.ok(t.samples[0].curv < 0.45, `${t.name}: start line is not on a straight (${t.samples[0].curv.toFixed(2)})`);
   }
 }
@@ -43,9 +44,35 @@ for (const node of allNodes()) {
   assert.ok(resets <= 3, `${node.id} (${race.track.name}): ${resets} stuck resets`);
   const lap = secs / node.race.laps;
   worst = Math.max(worst, lap);
-  console.log(`${node.id.padEnd(4)} ${race.track.name.padEnd(9)} ${node.race.reversed ? 'rev' : '   '} laps=${node.race.laps} total=${secs.toFixed(1)}s lap≈${lap.toFixed(1)}s resets=${resets} order=${race.trucks.slice().sort((a, b) => a.place - b.place).map(t => t.color).join('>')}`);
+  const air = Math.max(...race.trucks.map(t => t.airMax));
+  if (race.track.ramps.length) assert.ok(air > 0.55, `${node.id} (${race.track.name}): ramp jump too short (${air.toFixed(2)}s)`);
+  console.log(`${node.id.padEnd(4)} ${race.track.name.padEnd(9)} ${node.race.reversed ? 'rev' : '   '} laps=${node.race.laps} total=${secs.toFixed(1)}s lap≈${lap.toFixed(1)}s resets=${resets} ramps=${race.track.ramps.length} air=${air.toFixed(2)}s order=${race.trucks.slice().sort((a, b) => a.place - b.place).map(t => t.color).join('>')}`);
 }
-assert.ok(worst < 40, `a lap takes too long (${worst.toFixed(1)}s)`);
+assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
+
+// 2b. Entre camionetas la caja de choque es la mitad del dibujo (13 de largo): se solapan al
+//     rozarse, pero no se atraviesan, y el choque se anuncia.
+{
+  const track = buildTrack(allNodes()[0].race);
+  const up = { tires: 0, shocks: 0, accel: 0, speed: 0 };
+  const race = createRace({ track, trucks: [{ ai: false, up }, { ai: false, up }], laps: 3, seed: 1 });
+  race.state = 'racing';
+  const [a, b] = race.trucks, s0 = track.samples[track.n - 12];
+  a.x = s0.x - 12; a.y = s0.y; a.vx = 60; a.vy = 0; a.a = 0;
+  b.x = s0.x + 12; b.y = s0.y; b.vx = -60; b.vy = 0; b.a = Math.PI;
+  for (const t of [a, b]) { t.g = t.alt = 0; t.rate = 0; }
+  let closest = 99, crashed = false, bounced = false;
+  for (let i = 0; i < 40; i++) {
+    step(race, 1 / 60, { steer: 0, gas: false, brake: false, nitro: false });
+    race.over = false;
+    closest = Math.min(closest, Math.hypot(a.x - b.x, a.y - b.y));
+    if (race.events.some(e => e.type === 'crash')) { crashed = true; bounced = a.vx < 0 && b.vx > 0; }
+    race.events.length = 0;
+  }
+  assert.ok(closest < 9 && closest > 5, `trucks should overlap about half their length, got ${closest.toFixed(1)}`);
+  assert.ok(crashed, 'a head-on hit must raise a crash event');
+  assert.ok(bounced, 'trucks must bounce back');
+}
 
 // 3. Determinista: misma semilla, mismo resultado.
 const a = run(allNodes()[3], 1), b = run(allNodes()[3], 1);

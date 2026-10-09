@@ -3,8 +3,13 @@
 import { rng, distAt, heightAt, W, H } from './track.js';
 
 export const MAX_LEVEL = 6;
-const TRUCK_R = 4;          // radio de choque de una camioneta
-const GRAVITY = 260;
+const TRUCK_R = 5;          // radio de choque de una camioneta contra las vallas
+// Entre camionetas la caja de choque es la MITAD del dibujo: se meten una en otra al rozarse,
+// pero el golpe se nota (rebote, chispas y sonido).
+const CAR_R = 3.25;
+const GRAVITY = 175;        // baja: los saltos son largos, como en las máquinas de antes
+const LAUNCH = 1.6;         // cuánto exagera el despegue la subida que traía
+const VZ_MAX = 72;
 const NITRO_TIME = 0.75;
 const TURN_RATE = 3.1;
 const SLOPE = 55;            // cuánto frena una subida (y empuja una bajada)
@@ -12,8 +17,8 @@ const SLOPE = 55;            // cuánto frena una subida (y empuja una bajada)
 /** Prestaciones de una camioneta según sus niveles de mejora (0..6, admite decimales). */
 export function statsFor (up) {
   return {
-    accel: 64 + up.accel * 12,
-    top: 72 + up.speed * 8,
+    accel: 72 + up.accel * 12,
+    top: 82 + up.speed * 8,
     grip: 8.5 + up.tires * 2,
     shocks: up.shocks,
     tires: up.tires,
@@ -38,12 +43,14 @@ export function createRace ({ track, trucks, laps, seed, grip = 1 }) {
     const back = 5 + Math.floor(k / 2) * 5;
     const i = (n - back) % n;
     const s = track.samples[i];
-    const side = (k % 2 ? 1 : -1) * 5.5;
+    const side = (k % 2 ? 1 : -1) * 8;
     return {
       k, ai: !!t.ai, color: t.color || 'red', boss: !!t.boss,
       stats: statsFor(t.up), skill: t.skill ?? 1,
       x: s.x - s.ty * side, y: s.y + s.tx * side,
-      a: Math.atan2(s.ty, s.tx), vx: 0, vy: 0, z: 0, vz: 0,
+      a: Math.atan2(s.ty, s.tx), vx: 0, vy: 0,
+      // Altura: `g` suelo bajo la camioneta, `alt` la suya, `z` lo que vuela por encima.
+      g: 0, alt: 0, z: 0, vz: 0, rate: 0, air: false, airT: 0, airMax: 0,
       idx: i, lap: -1, progress: i - n,
       nitro: t.nitro ?? 0, nitroT: 0, nitroHeld: false,
       mud: false, finished: false, finishT: 0, place: 0,
@@ -51,6 +58,7 @@ export function createRace ({ track, trucks, laps, seed, grip = 1 }) {
       lapStart: 0, bestLap: 0,
     };
   });
+  for (const tr of list) tr.g = tr.alt = heightAt(track, tr.x, tr.y);
   return {
     track, laps, grip, rand, trucks: list, t: 0, state: 'countdown', countdown: 3.2,
     finishedCount: 0, pickup: null, pickupT: 4 + rand() * 3, events: [], over: false,
@@ -65,19 +73,19 @@ function aiControl (race, tr) {
   const tgt = s[(tr.idx + look) % n];
   // La máquina no va clavada al eje: cambia de carril cada tanto.
   tr.laneT -= 1 / 60;
-  if (tr.laneT <= 0) { tr.lane = (rand() * 2 - 1) * 6; tr.laneT = 1.5 + rand() * 2.5; }
+  if (tr.laneT <= 0) { tr.lane = (rand() * 2 - 1) * 10; tr.laneT = 1.5 + rand() * 2.5; }
   const tx = tgt.x - tgt.ty * tr.lane, ty = tgt.y + tgt.tx * tr.lane;
   const diff = wrapAngle(Math.atan2(ty - tr.y, tx - tr.x) - tr.a);
   const steer = diff > 0.07 ? 1 : diff < -0.07 ? -1 : 0;
   // Frena si viene una curva cerrada y va rápido para ella: mira la más cerrada del tramo que viene.
   let curv = 0;
   for (let o = 2; o <= look + 6; o++) curv = Math.max(curv, s[(tr.idx + o) % n].curv);
-  const limit = 40 + 70 * Math.max(0, 1 - curv / 1.2) + tr.stats.grip * 1.2;
+  const limit = 52 + 78 * Math.max(0, 1 - curv / 1.2) + tr.stats.grip * 1.3;
   let gas = Math.abs(diff) < 1.1 || speed < 22;
   if (speed > limit) gas = false;
   const brake = speed > limit * 1.12;
   let nitro = false;
-  if (tr.nitro > 0 && tr.nitroT <= 0 && Math.abs(diff) < 0.15 && curv < 0.2 && speed > 30 && rand() < 0.012) nitro = true;
+  if (tr.nitro > 0 && tr.nitroT <= 0 && !tr.air && Math.abs(diff) < 0.15 && curv < 0.2 && speed > 30 && rand() < 0.012) nitro = true;
   return { steer, gas, brake, nitro };
 }
 
@@ -85,7 +93,7 @@ function stepTruck (race, tr, input, dt) {
   const { track } = race;
   const n = track.n, s = track.samples;
   const st = tr.stats;
-  const air = tr.z > 0;
+  const air = tr.air;
   let speed = Math.hypot(tr.vx, tr.vy);
 
   // Nitro: un toque gasta una unidad.
@@ -127,17 +135,6 @@ function stepTruck (race, tr, input, dt) {
   tr.vx = fx * vf - fy * vl; tr.vy = fy * vf + fx * vl;
   tr.x += tr.vx * dt; tr.y += tr.vy * dt;
 
-  // Salto
-  if (air || tr.vz > 0) {
-    tr.z += tr.vz * dt; tr.vz -= GRAVITY * dt;
-    if (tr.z <= 0) {
-      tr.z = 0; tr.vz = 0;
-      const keep = Math.min(0.97, 0.7 + 0.045 * st.shocks);
-      tr.vx *= keep; tr.vy *= keep;
-      race.events.push({ type: 'land', k: tr.k });
-    }
-  }
-
   // Paredes: el campo de distancias da cuánto se salió y hacia dónde empujar.
   const lim = track.half - TRUCK_R;
   const d = distAt(track, tr.x, tr.y);
@@ -154,6 +151,32 @@ function stepTruck (race, tr, input, dt) {
     }
   }
   tr.x = Math.max(2, Math.min(W - 3, tr.x)); tr.y = Math.max(2, Math.min(H - 3, tr.y));
+
+  // Altura. En el suelo la camioneta lo sigue; despega cuando el suelo se le acaba de golpe
+  // bajo las ruedas (el borde de una rampa, la cresta de una loma) y venía subiendo.
+  const g = heightAt(track, tr.x, tr.y);
+  if (!tr.air) {
+    const rate = (g - tr.g) / dt;
+    if (tr.rate > 10 && tr.rate - rate > 4.5 && speed > 30) {
+      tr.air = true; tr.airT = 0;
+      tr.alt = tr.g; tr.vz = Math.min(VZ_MAX, tr.rate * LAUNCH);
+      race.events.push({ type: 'jump', k: tr.k });
+    } else { tr.alt = g; tr.rate = rate; }
+  }
+  if (tr.air) {
+    tr.vz -= GRAVITY * dt; tr.alt += tr.vz * dt; tr.airT += dt;
+    if (tr.alt <= g) {
+      tr.air = false; tr.alt = g; tr.rate = 0; tr.vz = 0;
+      if (tr.airT > tr.airMax) tr.airMax = tr.airT;
+      if (tr.airT > 0.25) {
+        // Caer de un salto largo cuesta velocidad; los amortiguadores la conservan.
+        const keep = Math.min(0.97, 0.72 + 0.042 * st.shocks);
+        tr.vx *= keep; tr.vy *= keep;
+        race.events.push({ type: 'land', k: tr.k });
+      }
+    }
+  }
+  tr.g = g; tr.z = tr.alt - g;
 
   // Avance por el eje: la muestra más cercana dentro de una ventana (así un cruce no confunde).
   const prev = tr.idx;
@@ -175,13 +198,6 @@ function stepTruck (race, tr, input, dt) {
       }
       tr.lapStart = race.t;
     } else if (bi > prev && bi - prev > n / 2) tr.lap--;   // la cruzó hacia atrás
-    // Loma: despega si la pasó hacia adelante y con velocidad.
-    if (!air && speed > 24) {
-      for (const b of track.bumps) {
-        const crossed = prev < bi ? (prev < b && b <= bi) : (bi < prev && prev - bi > n / 2 && (b > prev || b <= bi));
-        if (crossed) { tr.vz = Math.min(80, speed * 0.85); tr.z = 0.01; race.events.push({ type: 'jump', k: tr.k }); break; }
-      }
-    }
   }
   tr.progress = tr.lap * n + tr.idx;
 
@@ -198,14 +214,15 @@ function collide (race) {
       const a = ts[i], b = ts[j];
       if (a.z > 3 || b.z > 3) continue;
       const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
-      const min = TRUCK_R * 2;
+      const min = CAR_R * 2;
       if (d >= min || d === 0) continue;
       const nx = dx / d, ny = dy / d, push = (min - d) / 2;
       a.x -= nx * push; a.y -= ny * push; b.x += nx * push; b.y += ny * push;
       const rel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
       if (rel < 0) {
-        const imp = rel * 0.6;
+        const imp = rel * 0.9;
         a.vx += nx * imp; a.vy += ny * imp; b.vx -= nx * imp; b.vy -= ny * imp;
+        if (rel < -10) race.events.push({ type: 'crash', k: a.k, j: b.k, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: Math.max(a.z, b.z), force: -rel });
       }
     }
   }
@@ -217,7 +234,7 @@ function stepPickup (race, dt) {
     race.pickupT -= dt;
     if (race.pickupT <= 0) {
       const s = track.samples[Math.floor(rand() * track.n)];
-      const side = (rand() * 2 - 1) * 6;
+      const side = (rand() * 2 - 1) * 11;
       race.pickup = { type: rand() < 0.55 ? 'nitro' : 'cash', x: s.x - s.ty * side, y: s.y + s.tx * side, ttl: 9 };
     }
     return;
@@ -256,6 +273,7 @@ export function step (race, dt, input) {
       if (tr.stuckT > 2.5) {
         const s = race.track.samples[tr.idx];
         tr.x = s.x; tr.y = s.y; tr.a = Math.atan2(s.ty, s.tx); tr.vx = tr.vy = 0; tr.stuckT = 0;
+        tr.g = tr.alt = heightAt(race.track, s.x, s.y); tr.rate = 0; tr.air = false; tr.z = 0;
       }
     }
   }

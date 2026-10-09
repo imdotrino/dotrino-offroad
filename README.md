@@ -11,8 +11,10 @@ propios. PWA instalable, **funciona sin conexión**.
 
 ## Qué tiene
 
-- **Cuatro camionetas por carrera**: tú contra tres llevadas por la máquina. Lomas que te
-  hacen saltar, charcos que te frenan, y nitros y bolsas de dinero que aparecen en la pista.
+- **Cuatro camionetas por carrera**: tú contra tres llevadas por la máquina, en una pista
+  ancha. **Rampas** con saltos largos, lomas, cuestas, charcos que te frenan, y nitros y bolsas
+  de dinero que aparecen en la pista. Las camionetas chocan entre sí (caja de choque de medio
+  dibujo: se solapan al rozarse, rebotan y saltan chispas).
 - **Taller** entre carreras: llantas, amortiguadores, aceleración, velocidad y nitros, con el
   dinero de los premios.
 - **Mapa de 24 carreras** (CONVENCIONES §12): cuatro regiones (desierto, bosque, nieve,
@@ -20,8 +22,10 @@ propios. PWA instalable, **funciona sin conexión**.
   ganar, 2 por el segundo puesto, 1 por el tercero) abren jefes y regiones.
 - **Reta a un amigo**: cada carrera es determinista y se comparte por enlace (`#r=<carrera>`).
   Compartir da 3 nitros, una vez por carrera.
-- Teclado (← → girar, ↑ acelerar, ↓ frenar, Espacio nitro) y mandos táctiles. En un teléfono
-  se ve más grande en horizontal.
+- **Giro analógico**: en táctil, un volante (cuanto más lejos del centro, más gira) y pedales
+  de gas y freno; mando de juego (palanca izquierda, gatillos, X nitro); y teclado (← → girar,
+  ↑ acelerar, ↓ frenar, Espacio nitro), que gira el volante poco a poco. En un teléfono se ve
+  más grande en horizontal.
 - Bilingüe es/en.
 
 ## Privacidad
@@ -45,7 +49,7 @@ npm run test:e2e   # Playwright sobre el build
 | Archivo | Qué hace |
 |---|---|
 | `src/track.js` | Trazados, muestreo del eje, campo de distancias y alturas (lógica pura) |
-| `src/sim.js` | Física, rivales, premios en pista (lógica pura y determinista) |
+| `src/sim.js` | Física (agarre, altura y saltos, choques), rivales, premios en pista (lógica pura y determinista) |
 | `src/levels.js` | Mapa, estrellas, premios y precios |
 | `src/render.js` | Proyección oblicua: terreno con relieve y camionetas modeladas con cubitos |
 | `src/race.js` | Pantalla de carrera: bucle, mandos y marcador |

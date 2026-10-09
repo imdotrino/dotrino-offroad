@@ -3,7 +3,7 @@
 // las lomas, las cuestas y las vallas se ven con volumen. El terreno se pinta UNA vez por
 // carrera y cada cuadro solo se le ponen encima las camionetas, las partículas y el premio.
 // Nada de imágenes: todo sale de código.
-import { W, H, rng, heightAt } from './track.js';
+import { W, H, rng, heightAt, RAMP_LEN } from './track.js';
 
 export const SW = W;           // tamaño de la pantalla (lienzo)
 export const SH = 240;
@@ -96,6 +96,18 @@ export function paintTrack (track, regionKey) {
     const c = (Math.floor(u / 2) + Math.floor(v / 2)) & 1;
     set(x, y, c ? [245, 245, 245] : [24, 24, 28]);
   });
+  // Rampas: tablones, para que se vean venir.
+  const n = track.n;
+  for (let k = 0; k < W * H; k++) {
+    if (track.field[k] >= half - 1) continue;
+    for (const r of track.ramps) {
+      const c = (r - track.near[k] + n) % n;
+      if (c > RAMP_LEN + 0.5) continue;
+      const x = k % W, y = (k / W) | 0;
+      const plank = Math.floor(c * 2) % 3 === 0;
+      set(x, y, c < 0.6 ? [250, 214, 80] : [184, 134, 78], (plank ? 0.74 : 1) * (hash(x >> 1, y >> 1) < 0.5 ? 1 : 0.93));
+    }
+  }
   // Charcos
   for (const p of track.puddles) {
     for (let y = Math.max(0, (p.y - p.r) | 0); y <= Math.min(H - 1, (p.y + p.r + 1) | 0); y++) {
@@ -126,6 +138,9 @@ export function paintTrack (track, regionKey) {
   //    ver su cara frontal, más oscura.
   const img = ctx.createImageData(SW, SH);
   const out = img.data;
+  // De qué punto del mundo (su y) es cada píxel del terreno: con eso una valla o una loma
+  // que quedan delante tapan a la camioneta (drawRace).
+  const depth = new Uint16Array(SW * SH);
   for (let x = 0; x < W; x++) {
     let minY = SH;
     for (let y = H - 1; y >= 0 && minY > 0; y--) {
@@ -134,10 +149,12 @@ export function paintTrack (track, regionKey) {
       const wall = d >= -1 && d < 3;
       const sy = Math.round(screenY(y, hg[i] + (wall ? WALL_H : 0)));
       if (sy >= minY) continue;
-      const tall = wall && minY - sy > 1;      // solo la valla enseña cara; una ladera se estira sin más
+      // Enseñan cara frontal la valla y los cortes (el borde de una rampa); una ladera se estira sin más.
+      const tall = minY - sy > 1 && (wall || (y < H - 1 && hg[i] - hg[i + W] > 1.5));
       for (let r = Math.max(0, sy); r < minY; r++) {
         const o = (r * SW + x) * 4, k = tall && r > sy ? 0.62 : 1;
         out[o] = px[i * 4] * k; out[o + 1] = px[i * 4 + 1] * k; out[o + 2] = px[i * 4 + 2] * k; out[o + 3] = 255;
+        depth[r * SW + x] = y;
       }
       minY = sy;
     }
@@ -148,6 +165,7 @@ export function paintTrack (track, regionKey) {
     }
   }
   ctx.putImageData(img, 0, 0);
+  cv.depth = depth;
 
   // Adornos fuera de la pista
   const deco = DECO[pal.deco];
@@ -235,11 +253,16 @@ function truckFrames (color) {
       }
     }
     dots.sort((p, q) => (p.ry - q.ry) || (p.z - q.z));     // del fondo al frente, de abajo arriba
+    // `dy`: a qué distancia del centro (hacia el frente) está lo pintado en cada píxel.
+    const dy = new Float32Array(SP * SP);
     for (const d of dots) {
       const x = Math.round(SP / 2 + d.rx - 0.5), y = Math.round(AY + d.ry * KY - (d.z + 1) * KZ);
       ctx.fillStyle = side[d.c]; ctx.fillRect(x, y + 1, 1, 1);
       ctx.fillStyle = top[d.c]; ctx.fillRect(x, y, 1, 1);
+      if (x >= 0 && x < SP && y >= 0 && y + 1 < SP) { dy[y * SP + x] = d.ry; dy[(y + 1) * SP + x] = d.ry; }
     }
+    cv.pixels = ctx.getImageData(0, 0, SP, SP).data;
+    cv.dy = dy;
     frames.push(cv);
   }
   return frames;
@@ -247,6 +270,8 @@ function truckFrames (color) {
 
 export function makeSprites () {
   const out = {};
+  out.scratch = document.createElement('canvas');
+  out.scratch.width = SP; out.scratch.height = SP;
   for (const color of Object.keys(TRUCK_COLORS)) out[color] = truckFrames(color);
   // Sombra: la huella de la camioneta en el suelo, por ángulo.
   out.shadow = [];
@@ -311,8 +336,25 @@ export function drawRace (ctx, bg, race, sprites, fx, t) {
   for (const tr of order) {
     ctx.drawImage(sprites.shadow[frameOf(tr)], left(tr) + 1, Math.round(screenY(tr.y, ground(tr.x, tr.y))) - AY + 1);
   }
+  // Cada camioneta se dibuja píxel a píxel contra el terreno: lo que tiene delante (una
+  // valla, una loma, el borde de una rampa) la tapa.
+  const sctx = sprites.scratch.getContext('2d');
+  const tmp = sctx.createImageData(SP, SP);
   for (const tr of order) {
-    ctx.drawImage(sprites[tr.color][frameOf(tr)], left(tr), Math.round(screenY(tr.y, ground(tr.x, tr.y) + tr.z)) - AY);
+    const fr = sprites[tr.color][frameOf(tr)];
+    const x0 = left(tr), y0 = Math.round(screenY(tr.y, ground(tr.x, tr.y) + tr.z)) - AY;
+    tmp.data.set(fr.pixels);
+    for (let py = 0; py < SP; py++) {
+      const sy = y0 + py;
+      if (sy < 0 || sy >= SH) continue;
+      for (let pxl = 0; pxl < SP; pxl++) {
+        const sx = x0 + pxl, k = py * SP + pxl;
+        if (sx < 0 || sx >= SW || !fr.pixels[k * 4 + 3]) continue;
+        if (bg.depth[sy * SW + sx] > tr.y + fr.dy[k] + 1.5) tmp.data[k * 4 + 3] = 0;
+      }
+    }
+    sctx.putImageData(tmp, 0, 0);
+    ctx.drawImage(sprites.scratch, x0, y0);
   }
   // Flecha sobre el jugador al arrancar, para que sepa cuál es la suya.
   const me = race.trucks[0];
@@ -330,7 +372,7 @@ export function emitParticles (race, fx, dust) {
     const bx = tr.x - Math.cos(tr.a) * 6, by = tr.y - Math.sin(tr.a) * 6;
     if (tr.nitroT > 0) {
       for (let i = 0; i < 2; i++) fx.parts.push({ x: bx + Math.random() * 3 - 1.5, y: by + Math.random() * 3 - 1.5, z: tr.z + 2, vz: 0, vx: -tr.vx * 0.2, vy: -tr.vy * 0.2, life: 0.22, max: 0.22, size: 2, color: Math.random() < 0.5 ? '#ffd040' : '#ff6a20' });
-    } else if (tr.z <= 0 && speed > 25 && Math.random() < 0.35) {
+    } else if (!tr.air && speed > 25 && Math.random() < 0.35) {
       fx.parts.push({ x: bx + Math.random() * 4 - 2, y: by + Math.random() * 4 - 2, z: 0, vz: 5, vx: 0, vy: 0, life: 0.45, max: 0.45, size: Math.random() < 0.3 ? 2 : 1, color: tr.mud ? '#5a3c22' : dust });
     }
   }

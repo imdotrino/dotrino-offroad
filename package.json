@@ -1,7 +1,7 @@
 {
   "name": "offroad",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Offroad — carreras de camionetas todoterreno en pixel art, con la pista entera en pantalla (Vite, sin framework). Ecosistema Dotrino.",
   "scripts": {

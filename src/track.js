@@ -7,7 +7,9 @@
 // oblicua (render.js): por eso el mundo es más alto que la pantalla, que lo aplasta al dibujar.
 export const W = 384;
 export const H = 354;
-export const HALF = 13;        // medio ancho de la pista, en px
+export const HALF = 19;        // medio ancho de la pista (ancha: caben tres camionetas a la par)
+export const RAMP_LEN = 10;    // largo de una rampa, en muestras
+export const RAMP_H = 15;      // alto del borde de una rampa
 const STEP = 4;                // separación entre muestras del eje
 const FX = 26, FY = 30, FW = W - 52, FH = H - 58;   // área útil para los puntos de control
 
@@ -18,7 +20,7 @@ export const LAYOUTS = [
   { name: 'eight', pts: [[0.9, 0.88], [0.9, 0.12], [0.62, 0.12], [0.38, 0.88], [0.1, 0.88], [0.1, 0.12], [0.38, 0.12], [0.62, 0.88]] },
   { name: 'snake', pts: [[0.08, 0.1], [0.92, 0.1], [0.92, 0.38], [0.3, 0.38], [0.3, 0.64], [0.92, 0.64], [0.92, 0.92], [0.08, 0.92]] },
   { name: 'crown', pts: [[0.08, 0.9], [0.08, 0.1], [0.32, 0.1], [0.5, 0.54], [0.68, 0.1], [0.92, 0.1], [0.92, 0.9], [0.5, 0.92]] },
-  { name: 'peanut', pts: [[0.36, 0.28], [0.64, 0.28], [0.82, 0.1], [0.93, 0.5], [0.82, 0.9], [0.64, 0.72], [0.36, 0.72], [0.18, 0.9], [0.07, 0.5], [0.18, 0.1]] },
+  { name: 'peanut', pts: [[0.3, 0.28], [0.7, 0.28], [0.84, 0.1], [0.93, 0.5], [0.84, 0.9], [0.7, 0.72], [0.3, 0.72], [0.16, 0.9], [0.07, 0.5], [0.16, 0.1]] },
   { name: 'spiral', pts: [[0.06, 0.08], [0.94, 0.08], [0.94, 0.92], [0.3, 0.92], [0.3, 0.4], [0.7, 0.4], [0.7, 0.66], [0.06, 0.66]] },
   { name: 'boot', pts: [[0.08, 0.1], [0.55, 0.1], [0.55, 0.46], [0.92, 0.46], [0.92, 0.9], [0.08, 0.9]] },
   { name: 'hammer', pts: [[0.08, 0.1], [0.92, 0.1], [0.92, 0.42], [0.64, 0.42], [0.64, 0.9], [0.36, 0.9], [0.36, 0.42], [0.08, 0.42]] },
@@ -116,7 +118,7 @@ function buildField (s) {
 
 /**
  * Construye una pista.
- * @param {{layout:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number}} spec
+ * @param {{layout:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number}} spec
  */
 export function buildTrack (spec) {
   const layout = LAYOUTS[spec.layout % LAYOUTS.length];
@@ -135,15 +137,39 @@ export function buildTrack (spec) {
   const cross = [];
   for (let i = 0; i < n; i++) {
     for (let j = i + 17; j < n; j++) {
-      if (circ(i, j) > 16 && Math.hypot(samples[i].x - samples[j].x, samples[i].y - samples[j].y) < HALF * 2.6) { cross.push(i, j); }
+      if (circ(i, j) > 16 && Math.hypot(samples[i].x - samples[j].x, samples[i].y - samples[j].y) < HALF * 1.3) { cross.push(i, j); }
     }
   }
   const nearCross = (i, m) => cross.some(c => circ(c, i) < m);
+  // Rampas: una subida larga que acaba en un borde cortado, en plena recta. A velocidad, la
+  // camioneta sale volando y cae bastante más allá (la física del salto está en sim.js).
+  const ramps = [];
+  const wantRamps = spec.ramps ?? 1;
+  // Se puntúa cada sitio posible por lo recto que es su tramo (la subida y la caída) y se
+  // elige al azar entre los rectos; si el trazado no tiene ninguno, vale el menos curvo.
+  const spots = [];
+  for (let i = RAMP_LEN + 4; i < n - 30; i++) {
+    if (nearCross(i, 24)) continue;
+    let worst = 0;
+    for (let o = -RAMP_LEN - 2; o <= 16; o++) worst = Math.max(worst, samples[(i + o + n) % n].curv);
+    spots.push({ i, worst });
+  }
+  for (let k = 0; k < wantRamps; k++) {
+    const free = spots.filter(q => !ramps.some(r => circ(r, q.i) < 50));
+    const good = free.filter(q => q.worst < 0.38);
+    if (good.length) ramps.push(good[Math.floor(rand() * good.length)].i);
+    else {
+      const best = free.sort((a, b) => a.worst - b.worst)[0];
+      if (best && best.worst < 0.75) ramps.push(best.i);
+    }
+  }
+  const onRamp = (i, m) => ramps.some(r => { const c = (r - i + n) % n; return c <= RAMP_LEN + m || n - c <= 22 + m; });
+
   const bumps = [];
   const wantBumps = spec.bumps ?? 3;
   for (let tries = 0; tries < 200 && bumps.length < wantBumps; tries++) {
     const i = 14 + Math.floor(rand() * (n - 28));
-    if (samples[i].curv > 0.25 || nearCross(i, 6)) continue;
+    if (samples[i].curv > 0.25 || nearCross(i, 6) || onRamp(i, 8)) continue;
     if (bumps.some(b => circ(b, i) < 18)) continue;
     bumps.push(i);
   }
@@ -154,7 +180,7 @@ export function buildTrack (spec) {
   const wantHills = spec.hills ?? 1;
   for (let tries = 0; tries < 200 && hills.length < wantHills; tries++) {
     const i = 20 + Math.floor(rand() * (n - 40));
-    if (nearCross(i, 16) || bumps.some(b => circ(b, i) < 14) || hills.some(q => circ(q.i, i) < 40)) continue;
+    if (nearCross(i, 16) || onRamp(i, 14) || bumps.some(b => circ(b, i) < 14) || hills.some(q => circ(q.i, i) < 40)) continue;
     hills.push({ i, h: 13 + rand() * 6, s: 8 + rand() * 3 });
   }
 
@@ -163,7 +189,11 @@ export function buildTrack (spec) {
   const elev = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     let e = 0;
-    for (const b of bumps) { const c = circ(b, i) / 1.4; e += 6 * Math.exp(-c * c / 2); }
+    for (const b of bumps) { const c = circ(b, i) / 1.4; e += 4.5 * Math.exp(-c * c / 2); }
+    for (const r of ramps) {
+      const c = (r - i + n) % n;                       // muestras que faltan para el borde
+      if (c <= RAMP_LEN) { const u = 1 - c / RAMP_LEN; e += RAMP_H * u * u * (3 - 2 * u) * 0.35 + RAMP_H * u * 0.65; }
+    }
     for (const q of hills) { const c = circ(q.i, i) / q.s; e += q.h * Math.exp(-c * c / 2); }
     elev[i] = e;
   }
@@ -194,15 +224,15 @@ export function buildTrack (spec) {
   const wantPuddles = spec.puddles ?? 2;
   for (let tries = 0; tries < 200 && puddles.length < wantPuddles; tries++) {
     const i = 14 + Math.floor(rand() * (n - 28));
-    if (bumps.some(b => circ(b, i) < 6)) continue;
+    if (bumps.some(b => circ(b, i) < 6) || onRamp(i, 4)) continue;
     const s = samples[i];
-    const side = (rand() < 0.5 ? -1 : 1) * (2 + rand() * 4);
+    const side = (rand() < 0.5 ? -1 : 1) * (4 + rand() * 7);
     const p = { x: s.x - s.ty * side, y: s.y + s.tx * side, r: 5 + rand() * 2.5, i };
     if (puddles.some(q => Math.hypot(q.x - p.x, q.y - p.y) < 30)) continue;
     puddles.push(p);
   }
 
-  return { spec, name: layout.name, samples, n, field, height, bumps, hills, puddles, half: HALF };
+  return { spec, name: layout.name, samples, n, field, near, height, bumps, ramps, hills, puddles, half: HALF };
 }
 
 function sample (f, x, y, out) {

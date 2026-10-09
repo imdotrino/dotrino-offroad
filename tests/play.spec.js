@@ -86,7 +86,7 @@ test('un enlace compartido abre esa carrera sin tocar el avance', async ({ page 
   expect(p.nodes.n7).toBeUndefined()
 })
 
-test('en un teléfono en vertical la pista cabe a lo ancho, sin girar, y hay mandos táctiles', async ({ browser }) => {
+test('en un teléfono: pista a lo ancho, pedales debajo y volante analógico', async ({ browser }) => {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true })
   const page = await ctx.newPage()
   await open(page)
@@ -99,5 +99,22 @@ test('en un teléfono en vertical la pista cabe a lo ancho, sin girar, y hay man
   expect(pad.y).toBeGreaterThan(box.y + box.height)
   expect(box.x).toBeGreaterThanOrEqual(-1)
   expect(box.x + box.width).toBeLessThanOrEqual(391)
+  // El volante es analógico: cuanto más lejos del centro, más gira.
+  await page.waitForFunction(() => window.__offroad.race.race.state === 'racing', null, { timeout: 8000 })
+  const w = await page.getByTestId('wheel').boundingBox()
+  const cx = w.x + w.width / 2, cy = w.y + w.height / 2
+  const steerAt = async (dx) => {
+    await page.getByTestId('wheel').dispatchEvent('pointermove', { pointerId: 1, clientX: cx + dx, clientY: cy })
+    await page.waitForTimeout(80)
+    return page.evaluate(() => window.__offroad.race.input.steer)
+  }
+  await page.getByTestId('wheel').dispatchEvent('pointerdown', { pointerId: 1, clientX: cx, clientY: cy })
+  const half = await steerAt(w.width * 0.2)
+  expect(half).toBeGreaterThan(0.3); expect(half).toBeLessThan(0.7)
+  expect(await steerAt(w.width * 0.45)).toBe(1)
+  expect(await steerAt(-w.width * 0.45)).toBe(-1)
+  await page.getByTestId('wheel').dispatchEvent('pointerup', { pointerId: 1, clientX: cx, clientY: cy })
+  await page.waitForTimeout(80)
+  expect(await page.evaluate(() => window.__offroad.race.input.steer)).toBe(0)
   await ctx.close()
 })
