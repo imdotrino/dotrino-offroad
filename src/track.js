@@ -7,23 +7,23 @@
 // oblicua (render.js): por eso el mundo es más alto que la pantalla, que lo aplasta al dibujar.
 export const W = 384;
 export const H = 354;
-export const HALF = 19;        // medio ancho de la pista (ancha: caben tres camionetas a la par)
+export const HALF = 38;        // medio ancho de la pista: MUY ancha, seis camionetas a la par
 export const RAMP_LEN = 10;    // largo de una rampa, en muestras
 export const RAMP_H = 15;      // alto del borde de una rampa
 const STEP = 4;                // separación entre muestras del eje
-const FX = 26, FY = 30, FW = W - 52, FH = H - 58;   // área útil para los puntos de control
+const FX = 52, FY = 54, FW = W - 104, FH = H - 108;   // área útil para los puntos de control
 
 // Trazados dibujados a mano en el cuadro unidad. El primer tramo (p0→p1) es SIEMPRE una
 // recta: ahí va la salida.
 export const LAYOUTS = [
-  { name: 'kidney', pts: [[0.14, 0.09], [0.56, 0.08], [0.9, 0.18], [0.92, 0.8], [0.64, 0.9], [0.5, 0.52], [0.36, 0.9], [0.08, 0.8]] },
-  { name: 'eight', pts: [[0.9, 0.88], [0.9, 0.12], [0.62, 0.12], [0.38, 0.88], [0.1, 0.88], [0.1, 0.12], [0.38, 0.12], [0.62, 0.88]] },
-  { name: 'snake', pts: [[0.08, 0.1], [0.92, 0.1], [0.92, 0.38], [0.3, 0.38], [0.3, 0.64], [0.92, 0.64], [0.92, 0.92], [0.08, 0.92]] },
-  { name: 'crown', pts: [[0.08, 0.9], [0.08, 0.1], [0.32, 0.1], [0.5, 0.54], [0.68, 0.1], [0.92, 0.1], [0.92, 0.9], [0.5, 0.92]] },
-  { name: 'peanut', pts: [[0.3, 0.28], [0.7, 0.28], [0.84, 0.1], [0.93, 0.5], [0.84, 0.9], [0.7, 0.72], [0.3, 0.72], [0.16, 0.9], [0.07, 0.5], [0.16, 0.1]] },
-  { name: 'spiral', pts: [[0.06, 0.08], [0.94, 0.08], [0.94, 0.92], [0.3, 0.92], [0.3, 0.4], [0.7, 0.4], [0.7, 0.66], [0.06, 0.66]] },
-  { name: 'boot', pts: [[0.08, 0.1], [0.55, 0.1], [0.55, 0.46], [0.92, 0.46], [0.92, 0.9], [0.08, 0.9]] },
-  { name: 'hammer', pts: [[0.08, 0.1], [0.92, 0.1], [0.92, 0.42], [0.64, 0.42], [0.64, 0.9], [0.36, 0.9], [0.36, 0.42], [0.08, 0.42]] },
+  { name: 'bean', pts: [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.76, 1], [0.5, 0.62], [0.24, 1], [0, 1], [0, 0.5]] },
+  { name: 'eight', pts: [[1, 1], [1, 0.5], [1, 0], [0.64, 0], [0.36, 1], [0, 1], [0, 0.5], [0, 0], [0.36, 0], [0.64, 1]] },
+  { name: 'comb', pts: [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.67, 1], [0.67, 0.5], [0.33, 0.5], [0.33, 1], [0, 1], [0, 0.5]] },
+  { name: 'hammer', pts: [[0, 0], [0.5, 0], [1, 0], [1, 0.42], [0.72, 0.46], [0.72, 1], [0.28, 1], [0.28, 0.46], [0, 0.42]] },
+  { name: 'triangle', pts: [[0, 0], [0.5, 0], [1, 0], [0.76, 0.52], [0.5, 1], [0.24, 0.52]] },
+  { name: 'hourglass', pts: [[0, 0], [0.5, 0], [1, 0], [1, 0.36], [0, 0.64], [0, 1], [0.5, 1], [1, 1], [1, 0.64], [0, 0.36]] },
+  { name: 'oval', pts: [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.5, 1], [0, 1], [0, 0.5]] },
+  { name: 'boot', pts: [[0.75, 1], [0.25, 1], [0, 1], [0, 0.5], [0, 0], [0.26, 0], [0.52, 0], [0.52, 0.5], [1, 0.5], [1, 1]] },
 ];
 
 /** PRNG determinista (mulberry32). */
@@ -126,6 +126,10 @@ export function buildTrack (spec) {
   // Al revés: mismo trazado en sentido contrario, conservando p0→p1 como recta de salida.
   if (spec.reversed) pts = [pts[1], pts[0]].concat(pts.slice(2).reverse());
   const samples = sampleLoop(pts);
+  // La curva suavizada se abomba un poco hacia afuera en las esquinas: se recorta para que la
+  // pista entera, con su valla, quepa en el mundo.
+  const M = HALF + 5;
+  for (const q of samples) { q.x = Math.max(M, Math.min(W - M, q.x)); q.y = Math.max(M, Math.min(H - M, q.y)); }
   finishSamples(samples);
   const n = samples.length;
   const { field, near } = buildField(samples);
@@ -226,8 +230,8 @@ export function buildTrack (spec) {
     const i = 14 + Math.floor(rand() * (n - 28));
     if (bumps.some(b => circ(b, i) < 6) || onRamp(i, 4)) continue;
     const s = samples[i];
-    const side = (rand() < 0.5 ? -1 : 1) * (4 + rand() * 7);
-    const p = { x: s.x - s.ty * side, y: s.y + s.tx * side, r: 5 + rand() * 2.5, i };
+    const side = (rand() < 0.5 ? -1 : 1) * (6 + rand() * 20);
+    const p = { x: s.x - s.ty * side, y: s.y + s.tx * side, r: 7 + rand() * 4, i };
     if (puddles.some(q => Math.hypot(q.x - p.x, q.y - p.y) < 30)) continue;
     puddles.push(p);
   }

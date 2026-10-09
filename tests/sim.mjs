@@ -2,7 +2,7 @@
 // por la máquina) tienen que completar las vueltas sin atascarse, y la carrera tiene que ser
 // determinista. Es lo que comprueba que un trazado nuevo se puede correr.
 import assert from 'node:assert/strict';
-import { buildTrack, distAt, LAYOUTS } from '../src/track.js';
+import { buildTrack, distAt, LAYOUTS, W, H } from '../src/track.js';
 import { createRace, step } from '../src/sim.js';
 import { allNodes, rivalsFor, isUnlocked, totalStars, starsForPlace, prizeFor } from '../src/levels.js';
 
@@ -28,6 +28,8 @@ for (let i = 0; i < LAYOUTS.length; i++) {
   for (const reversed of [false, true]) {
     const t = buildTrack({ layout: i, reversed, seed: 7 + i, bumps: 3, puddles: 3 });
     assert.ok(t.n > 120, `${t.name}: too short (${t.n})`);
+    // La pista entera (con su valla) cabe en el mundo, y dos tramos no se pisan salvo en un cruce.
+    for (const q of t.samples) assert.ok(q.x > t.half + 4 && q.x < W - t.half - 4 && q.y > t.half + 4 && q.y < H - t.half - 4, `${t.name}: track leaves the world at ${q.x.toFixed(0)},${q.y.toFixed(0)}`);
     for (const s of t.samples) assert.ok(distAt(t, s.x, s.y) < 1.5, `${t.name}: sample off its own axis`);
     assert.equal(t.bumps.length, 3, `${t.name}: bumps`);
     assert.ok(t.ramps.length >= 1, `${t.name}${reversed ? ' rev' : ''}: no straight long enough for a ramp`);
@@ -46,7 +48,7 @@ for (const node of allNodes()) {
   worst = Math.max(worst, lap);
   const air = Math.max(...race.trucks.map(t => t.airMax));
   if (race.track.ramps.length) assert.ok(air > 0.55, `${node.id} (${race.track.name}): ramp jump too short (${air.toFixed(2)}s)`);
-  console.log(`${node.id.padEnd(4)} ${race.track.name.padEnd(9)} ${node.race.reversed ? 'rev' : '   '} laps=${node.race.laps} total=${secs.toFixed(1)}s lap≈${lap.toFixed(1)}s resets=${resets} ramps=${race.track.ramps.length} air=${air.toFixed(2)}s order=${race.trucks.slice().sort((a, b) => a.place - b.place).map(t => t.color).join('>')}`);
+  console.log(`${node.id.padEnd(4)} ${race.track.name.padEnd(9)} ${node.race.reversed ? 'rev' : '   '} n=${race.track.n} laps=${node.race.laps} total=${secs.toFixed(1)}s lap≈${lap.toFixed(1)}s resets=${resets} ramps=${race.track.ramps.length} air=${air.toFixed(2)}s order=${race.trucks.slice().sort((a, b) => a.place - b.place).map(t => t.color).join('>')}`);
 }
 assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
 

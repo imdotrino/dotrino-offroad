@@ -40,10 +40,10 @@ export function createRace ({ track, trucks, laps, seed, grip = 1 }) {
   const n = track.n;
   // Parrilla: de dos en dos, detrás de la línea (muestra 0).
   const list = trucks.map((t, k) => {
-    const back = 5 + Math.floor(k / 2) * 5;
+    const back = 6 + Math.floor(k / 2) * 5;
     const i = (n - back) % n;
     const s = track.samples[i];
-    const side = (k % 2 ? 1 : -1) * 8;
+    const side = (k % 2 ? 1 : -1) * 14;
     return {
       k, ai: !!t.ai, color: t.color || 'red', boss: !!t.boss,
       stats: statsFor(t.up), skill: t.skill ?? 1,
@@ -73,7 +73,7 @@ function aiControl (race, tr) {
   const tgt = s[(tr.idx + look) % n];
   // La máquina no va clavada al eje: cambia de carril cada tanto.
   tr.laneT -= 1 / 60;
-  if (tr.laneT <= 0) { tr.lane = (rand() * 2 - 1) * 10; tr.laneT = 1.5 + rand() * 2.5; }
+  if (tr.laneT <= 0) { tr.lane = (rand() * 2 - 1) * 22; tr.laneT = 1.5 + rand() * 2.5; }
   const tx = tgt.x - tgt.ty * tr.lane, ty = tgt.y + tgt.tx * tr.lane;
   const diff = wrapAngle(Math.atan2(ty - tr.y, tx - tr.x) - tr.a);
   const steer = diff > 0.07 ? 1 : diff < -0.07 ? -1 : 0;
@@ -234,7 +234,7 @@ function stepPickup (race, dt) {
     race.pickupT -= dt;
     if (race.pickupT <= 0) {
       const s = track.samples[Math.floor(rand() * track.n)];
-      const side = (rand() * 2 - 1) * 11;
+      const side = (rand() * 2 - 1) * 26;
       race.pickup = { type: rand() < 0.55 ? 'nitro' : 'cash', x: s.x - s.ty * side, y: s.y + s.tx * side, ttl: 9 };
     }
     return;

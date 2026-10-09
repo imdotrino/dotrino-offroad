@@ -12,7 +12,7 @@ propios. PWA instalable, **funciona sin conexión**.
 ## Qué tiene
 
 - **Cuatro camionetas por carrera**: tú contra tres llevadas por la máquina, en una pista
-  ancha. **Rampas** con saltos largos, lomas, cuestas, charcos que te frenan, y nitros y bolsas
+  muy ancha (76 px: caben seis camionetas a la par). **Rampas** con saltos largos, lomas, cuestas, charcos que te frenan, y nitros y bolsas
   de dinero que aparecen en la pista. Las camionetas chocan entre sí (caja de choque de medio
   dibujo: se solapan al rozarse, rebotan y saltan chispas).
 - **Taller** entre carreras: llantas, amortiguadores, aceleración, velocidad y nitros, con el
