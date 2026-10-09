@@ -50,7 +50,7 @@ export function createRace ({ track, trucks, laps, seed, grip = 1 }) {
       x: s.x - s.ty * side, y: s.y + s.tx * side,
       a: Math.atan2(s.ty, s.tx), vx: 0, vy: 0,
       // Altura: `g` suelo bajo la camioneta, `alt` la suya, `z` lo que vuela por encima.
-      g: 0, alt: 0, z: 0, vz: 0, rate: 0, air: false, airT: 0, airMax: 0,
+      g: 0, alt: 0, z: 0, vz: 0, rate: 0, climb: 0, air: false, airT: 0, airMax: 0,
       idx: i, lap: -1, progress: i - n,
       nitro: t.nitro ?? 0, nitroT: 0, nitroHeld: false,
       mud: false, finished: false, finishT: 0, place: 0,
@@ -193,10 +193,14 @@ function stepTruck (race, tr, input, dt) {
   const g = heightAt(track, tr.x, tr.y);
   if (!tr.air) {
     const rate = (g - tr.g) / dt;
-    // Despega cuando el suelo queda por debajo de por donde seguiría volando: el borde de una
-    // rampa (venía subiendo y sale disparada) o el corte de una meseta (sale recta y cae).
-    if (tr.g + tr.rate * dt - g > 0.12 && speed > 20) {
-      tr.air = true; tr.airT = 0;
+    // Despega solo si el suelo se le va de debajo más rápido de lo que caería (una cresta tras
+    // una subida, o la bajada de un nivel), Y hay de dónde saltar: una subida de 7 o más
+    // (rampa, montaña) o un piso en alto. Un hueco (6 de hondo, desde el suelo) no da para
+    // volar: se entra y se sale rodando, pegada al suelo.
+    if (rate > 0) tr.climb += g - tr.g; else if (rate < -1) tr.climb = 0;
+    const falls = tr.g + tr.rate * dt - 0.5 * GRAVITY * dt * dt - g > 0.12;
+    if (falls && speed > 20 && (tr.climb >= 7 || tr.g >= 10)) {
+      tr.air = true; tr.airT = 0; tr.climb = 0;
       tr.alt = tr.g; tr.vz = Math.min(VZ_MAX, tr.rate > 0 ? tr.rate * LAUNCH : tr.rate);
       race.events.push({ type: 'jump', k: tr.k });
     } else { tr.alt = g; tr.rate = rate; }

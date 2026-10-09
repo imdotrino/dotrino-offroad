@@ -209,6 +209,28 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
   console.log(`levels: ${high}/24 raised · ${twoFloors}/24 two floors · ${withDrop}/24 with a drop`);
 }
 
+// 2e. Física de los huecos: se entra y se sale RODANDO, sin despegar; de una rampa sí se vuela.
+{
+  const mk = (pits, ramps) => buildTrack({ seed: 9 * 104729, size: 5, maxLevel: 0, pits, rocks: 0, mounds: 0, bumps: 0, whoops: 0, hills: 0, ramps, puddles: 0 });
+  const drive = (track, from, dir, secs) => {
+    const up = { tires: 2, shocks: 2, accel: 2, speed: 2 };
+    const race = createRace({ track, trucks: [{ ai: false, up }], laps: 9, seed: 1 });
+    race.state = 'racing';
+    const a = race.trucks[0];
+    a.x = from.x; a.y = from.y; a.a = dir; a.vx = Math.cos(dir) * 70; a.vy = Math.sin(dir) * 70; a.g = a.alt = 0;
+    let air = 0, minG = 0;
+    for (let i = 0; i < secs * 60; i++) { step(race, 1 / 60, { steer: 0, gas: true, brake: false, nitro: false }); race.over = false; if (a.air) air++; minG = Math.min(minG, a.g); }
+    return { air, minG };
+  };
+  const t = mk(3, 0), pt = t.pits[0];
+  const r = drive(t, { x: pt.x - pt.rx - 14, y: pt.y }, 0, 1);
+  assert.ok(r.minG < -4, `the truck never went down into the pit (${r.minG.toFixed(1)})`);
+  assert.equal(r.air, 0, `the truck left the ground ${r.air} frames crossing a pit: it must roll through`);
+  const t2 = mk(0, 1), rp = t2.ramps[0], s0 = t2.samples[(rp - 14 + t2.n) % t2.n];
+  const r2 = drive(t2, { x: s0.x, y: s0.y }, Math.atan2(s0.ty, s0.tx), 1.5);
+  assert.ok(r2.air > 20, `a ramp should launch the truck (airborne ${r2.air} frames)`);
+}
+
 // 3. Determinista: misma semilla, mismo resultado.
 const a = run(allNodes()[3], 1), b = run(allNodes()[3], 1);
 assert.equal(a.steps, b.steps);
