@@ -58,6 +58,10 @@ npm run test:e2e   # Playwright sobre el build
 | `src/race.js` | Pantalla de carrera: bucle, mandos y marcador |
 | `src/main.js` | Mapa, taller, resultado y compartir |
 
+La pista tiene las **esquinas cuadradas**, por fuera y por dentro: la franja se mide con
+distancia «de cuadrado» al polígono (`buildField`), no con distancia normal, que las redondea.
+La trazada por la que se mide el avance y conduce la máquina sí va redondeada.
+
 Las pistas se **arman por piezas** a partir de una semilla (`generateLayout` en `src/track.js`):
 sobre una cuadrícula de 3×3 casillas se elige un grupo de casillas pegadas y la pista es su
 contorno: cada lado es una recta, cada vértice una curva, y algunas esquinas se cortan en

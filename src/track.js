@@ -165,7 +165,9 @@ export function generateLayout (seed, size = 4, opts = {}) {
   return Object.assign(pts, { crossed, chicanes });
 }
 
-const CORNER_R = 60;           // radio de las curvas (se achica solo si el lado es corto)
+// La pista en sí tiene las esquinas CUADRADAS (ver buildField). Esta curva es solo la de la
+// trazada: el camino por el que se mide el avance y por el que conduce la máquina.
+const CORNER_R = 30;
 
 /** PRNG determinista (mulberry32). */
 export function rng (seed) {
@@ -247,13 +249,36 @@ function finishSamples (s) {
   }
 }
 
-/** Distancia de cada píxel al eje (`field`) y en qué punto del eje cae (`near`, muestra con decimales). */
-function buildField (s) {
-  const n = s.length;
+/** Distancia «de cuadrado» (la mayor de las dos coordenadas) de un punto a un segmento. */
+function boxDist (px, py, a, b) {
+  const ax = a[0] - px, ay = a[1] - py, bx = b[0] - a[0], by = b[1] - a[1];
+  let best = 1e9;
+  const tryT = (t) => {
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const d = Math.max(Math.abs(ax + bx * t), Math.abs(ay + by * t));
+    if (d < best) best = d;
+  };
+  tryT(0); tryT(1);
+  if (bx) tryT(-ax / bx);
+  if (by) tryT(-ay / by);
+  if (bx - by) tryT((ay - ax) / (bx - by));
+  if (bx + by) tryT(-(ax + ay) / (bx + by));
+  return best;
+}
+
+/**
+ * `field`: distancia de cada punto al POLÍGONO de la pista, medida «de cuadrado». Con esa medida
+ * la franja de pista sale con las esquinas cuadradas, por fuera y por dentro, como en las
+ * máquinas de antes. `near`: en qué punto de la trazada cae cada punto (muestra con decimales).
+ */
+function buildField (s, poly) {
+  const n = s.length, m = poly.length;
   const field = new Float32Array(W * H);
   const near = new Float32Array(W * H);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
+      let box = 1e9;
+      for (let k = 0; k < m; k++) { const d = boxDist(x, y, poly[k], poly[(k + 1) % m]); if (d < box) box = d; }
       let best = 1e9, bn = 0;
       for (let i = 0; i < n; i++) {
         const a = s[i], b = s[(i + 1) % n];
@@ -265,7 +290,7 @@ function buildField (s) {
         const d = dx * dx + dy * dy;
         if (d < best) { best = d; bn = i + t; }
       }
-      field[y * W + x] = Math.sqrt(best);
+      field[y * W + x] = box;
       near[y * W + x] = bn;
     }
   }
@@ -291,7 +316,7 @@ export function buildTrack (spec) {
   for (const q of samples) { q.x = Math.max(M, Math.min(W - M, q.x)); q.y = Math.max(M, Math.min(H - M, q.y)); }
   finishSamples(samples);
   const n = samples.length;
-  const { field, near } = buildField(samples);
+  const { field, near } = buildField(samples, pts);
   const rand = rng(spec.seed);
 
   // Lomas: en tramos rectos, lejos de la salida y separadas entre sí.
@@ -323,7 +348,7 @@ export function buildTrack (spec) {
     if (good.length) ramps.push(good[Math.floor(rand() * good.length)].i);
     else {
       const best = free.sort((a, b) => a.worst - b.worst)[0];
-      if (best && best.worst < 0.75) ramps.push(best.i);
+      if (best) ramps.push(best.i);          // sin recta larga: el tramo menos curvo que haya
     }
   }
   const onRamp = (i, m) => ramps.some(r => { const c = (r - i + n) % n; return c <= RAMP_LEN + m || n - c <= 22 + m; });
@@ -344,7 +369,7 @@ export function buildTrack (spec) {
   for (let tries = 0; tries < 200 && hills.length < wantHills; tries++) {
     const i = 20 + Math.floor(rand() * (n - 40));
     if (nearCross(i, 16) || onRamp(i, 14) || bumps.some(b => circ(b, i) < 14) || hills.some(q => circ(q.i, i) < 40)) continue;
-    hills.push({ i, h: 13 + rand() * 6, s: 8 + rand() * 3 });
+    hills.push({ i, h: 7 + rand() * 3, s: 8 + rand() * 3 });   // bajas: una loma alta tapa la valla de detrás
   }
 
   const straightAt = (i, len) => { for (let o = 0; o <= len; o++) if (samples[(i + o) % n].curv > 0.25) return false; return true; };
@@ -380,7 +405,9 @@ export function buildTrack (spec) {
   const height = new Float32Array(W * H);
   for (let k = 0; k < W * H; k++) {
     const d = field[k] - HALF;
-    let fall = d < 3 ? 1 : Math.max(0, 1 - (d - 3) / 16);
+    // El relieve es de la pista y muere antes de llegar a la valla: así las vallas quedan
+    // rectas y a nivel, y el terreno de fuera, limpio.
+    let fall = Math.max(0, Math.min(1, (-d - 2) / 9));
     fall = fall * fall * (3 - 2 * fall);
     if (!fall) continue;
     const f = near[k], i0 = Math.floor(f) % n, i1 = (i0 + 1) % n, t = f - Math.floor(f);
@@ -426,9 +453,11 @@ export function buildTrack (spec) {
   const rocks = [];
   for (let tries = 0; tries < 400 && rocks.length < (spec.rocks ?? 2); tries++) {
     const i = 18 + Math.floor(rand() * (n - 30));
-    if (nearCross(i, 8) || onRamp(i, 4)) continue;
+    // En recta: en plena curva o en un cruce una roca es una trampa, no un obstáculo.
+    if (nearCross(i, 14) || onRamp(i, 4) || samples[i].curv > 0.3 || samples[(i + n - 8) % n].curv > 0.3) continue;
     const q = samples[i], lat = (rand() < 0.5 ? -1 : 1) * (6 + rand() * 22);
     const r = { x: q.x - q.ty * lat, y: q.y + q.tx * lat, r: 4.5 + rand() * 1.5, i, lat };
+    if (field[Math.round(r.y) * W + Math.round(r.x)] > HALF - r.r - 4) continue;       // pegada a la valla no
     if (rocks.some(o => Math.hypot(o.x - r.x, o.y - r.y) < 44) || puddles.some(o => Math.hypot(o.x - r.x, o.y - r.y) < o.r + 12)) continue;
     rocks.push(r);
   }

@@ -60,12 +60,12 @@ export function paintTrack (track, regionKey) {
       const n = hash(x, y), n2 = hash(x >> 1, y >> 1);
       if (d < -1) {
         let k = 1;
-        if (d > -3) k = 0.86;                              // sombra junto a la pared
-        else if (Math.abs(f - 5) < 0.7) k = 0.93;          // rodadas
-        if (n > 0.93) k *= 0.9;
+        if (d > -3) k = 0.86;                              // tierra apelmazada junto a la valla
+        if (n > 0.93) k *= 0.9; else if (n < 0.05) k *= 1.07;
         set(x, y, n2 < 0.5 ? pal.track : pal.track2, k);
       } else if (d < 3) {
-        const block = ((x >> 2) + (y >> 2)) & 1;
+        // Franjas a lo largo de la valla (no un ajedrezado suelto): siguen la pista.
+        const block = Math.floor(track.near[y * W + x] * 4 / 7) & 1;
         set(x, y, block ? pal.wallA : pal.wallB, d >= 2 ? 0.45 : d < 0 ? 1.08 : 0.92);
       } else {
         let k = d < 5.5 ? 0.82 : 1;
@@ -96,16 +96,26 @@ export function paintTrack (track, regionKey) {
     const c = (Math.floor(u / 2) + Math.floor(v / 2)) & 1;
     set(x, y, c ? [245, 245, 245] : [24, 24, 28]);
   });
-  // Rampas: tablones, para que se vean venir.
+  // Sombra de la valla sobre la pista (la luz viene del noroeste).
+  for (let y = 3; y < H; y++) {
+    for (let x = 3; x < W; x++) {
+      if (track.field[y * W + x] >= half - 1) continue;
+      if (track.field[(y - 3) * W + x - 3] >= half - 1) mul(x, y, 0.76);
+      else if (track.field[(y - 5) * W + x - 5] >= half - 1) mul(x, y, 0.9);
+    }
+  }
+  // Rampas: un montículo de la misma tierra, que se lee desde cualquier lado: se aclara al
+  // subir, la cresta va marcada y justo detrás queda la sombra de la caída.
   const n = track.n;
   for (let k = 0; k < W * H; k++) {
     if (track.field[k] >= half - 1) continue;
     for (const r of track.ramps) {
-      const c = (r - track.near[k] + n) % n;
-      if (c > RAMP_LEN + 0.5) continue;
+      const c = (r - track.near[k] + n) % n;                 // muestras que faltan para el borde
       const x = k % W, y = (k / W) | 0;
-      const plank = Math.floor(c * 2) % 3 === 0;
-      set(x, y, c < 0.6 ? [250, 214, 80] : [184, 134, 78], (plank ? 0.74 : 1) * (hash(x >> 1, y >> 1) < 0.5 ? 1 : 0.93));
+      if (c <= RAMP_LEN + 0.5) {
+        const u = 1 - c / RAMP_LEN;
+        mul(x, y, c < 0.55 ? 1.5 : 0.9 + 0.34 * u * u);
+      } else if (n - c < 3.4) mul(x, y, 0.52 + 0.14 * (n - c));
     }
   }
   // Charcos
@@ -163,7 +173,7 @@ export function paintTrack (track, regionKey) {
       const sy = Math.round(screenY(y, hg[i] + (wall ? WALL_H : rise[i])));
       if (sy >= minY) continue;
       // Enseñan cara frontal la valla y los cortes (el borde de una rampa); una ladera se estira sin más.
-      const tall = minY - sy > 1 && (wall || rise[i] > 0 || (y < H - 1 && hg[i] - hg[i + W] > 1.5));
+      const tall = minY - sy > 1 && (wall || rise[i] > 0 || (y < H - 1 && hg[i] - hg[i + W] > 3));
       for (let r = Math.max(0, sy); r < minY; r++) {
         const o = (r * SW + x) * 4, k = tall && r > sy ? 0.62 : 1;
         out[o] = px[i * 4] * k; out[o + 1] = px[i * 4 + 1] * k; out[o + 2] = px[i * 4 + 2] * k; out[o + 3] = 255;

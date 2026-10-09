@@ -80,10 +80,22 @@ function aiControl (race, tr) {
     const ahead = (r.i - tr.idx + n) % n;
     if (ahead > 0 && ahead < 16 && Math.abs(lane - r.lat) < 13) lane = r.lat + (lane >= r.lat ? 15 : -15);
   }
-  lane = Math.max(-31, Math.min(31, lane));
-  const tx = tgt.x - tgt.ty * lane, ty = tgt.y + tgt.tx * lane;
+  lane = Math.max(-26, Math.min(26, lane));
+  // El punto al que apunta tiene que quedar con margen de las vallas: en una esquina cuadrada
+  // el carril de fuera cae dentro de la pared, así que se va cerrando hacia la trazada.
+  let tx = tgt.x - tgt.ty * lane, ty = tgt.y + tgt.tx * lane;
+  for (let k = 0; k < 4 && distAt(track, tx, ty) > track.half - 10; k++) {
+    lane *= 0.5;
+    tx = tgt.x - tgt.ty * lane; ty = tgt.y + tgt.tx * lane;
+  }
   const diff = wrapAngle(Math.atan2(ty - tr.y, tx - tr.x) - tr.a);
-  const steer = diff > 0.07 ? 1 : diff < -0.07 ? -1 : 0;
+  let steer = Math.max(-1, Math.min(1, diff * 3.2));         // gira en proporción, como un volante
+  // Y si aun así tiene una roca justo delante, la esquiva por el lado contrario.
+  const hx = Math.cos(tr.a), hy = Math.sin(tr.a);
+  for (const r of track.rocks) {
+    const rx = r.x - tr.x, ry = r.y - tr.y, fwd = rx * hx + ry * hy, side = -rx * hy + ry * hx;
+    if (fwd > 0 && fwd < 36 && Math.abs(side) < r.r + 7) { steer = side > 0 ? -1 : 1; break; }
+  }
   // Frena si viene una curva cerrada y va rápido para ella: mira la más cerrada del tramo que viene.
   let curv = 0;
   for (let o = 2; o <= look + 6; o++) curv = Math.max(curv, s[(tr.idx + o) % n].curv);
@@ -93,6 +105,8 @@ function aiControl (race, tr) {
   const brake = speed > limit * 1.12;
   let nitro = false;
   if (tr.nitro > 0 && tr.nitroT <= 0 && !tr.air && Math.abs(diff) < 0.15 && curv < 0.2 && speed > 30 && rand() < 0.012) nitro = true;
+  // Trabada contra una valla o una roca: marcha atrás girando al otro lado, y vuelve a intentarlo.
+  if (tr.stuckT > 0.6 && tr.stuckT < 1.4) return { steer: -steer, gas: false, brake: true, nitro: false };
   return { steer, gas, brake, nitro };
 }
 
@@ -256,7 +270,7 @@ function stepPickup (race, dt) {
     race.pickupT -= dt;
     if (race.pickupT <= 0) {
       const s = track.samples[Math.floor(rand() * track.n)];
-      const side = (rand() * 2 - 1) * 26;
+      const side = (rand() * 2 - 1) * 22;
       race.pickup = { type: rand() < 0.55 ? 'nitro' : 'cash', x: s.x - s.ty * side, y: s.y + s.tx * side, ttl: 9 };
     }
     return;
@@ -291,7 +305,11 @@ export function step (race, dt, input) {
     stepTruck(race, tr, inp, dt);
     // Una máquina atascada vuelve al eje (no se queda contra una pared para siempre).
     if (tr.ai && !tr.finished) {
-      if (tr.progress > tr.bestProgress) { tr.bestProgress = tr.progress; tr.stuckT = 0; } else tr.stuckT += dt;
+      // Trabada = sin avanzar Y casi parada. Por fuera de una esquina cuadrada se recorre un
+      // buen trecho sin que cambie el punto más cercano de la trazada: eso no es estar trabada.
+      if (tr.progress > tr.bestProgress) { tr.bestProgress = tr.progress; tr.stuckT = 0; }
+      else if (Math.hypot(tr.vx, tr.vy) < 14) tr.stuckT += dt;
+      else tr.stuckT = Math.max(0, tr.stuckT - dt);
       if (tr.stuckT > 2.5) {
         const s = race.track.samples[tr.idx];
         tr.x = s.x; tr.y = s.y; tr.a = Math.atan2(s.ty, s.tx); tr.vx = tr.vy = 0; tr.stuckT = 0;
