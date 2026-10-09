@@ -21,6 +21,8 @@ propios. PWA instalable, **funciona sin conexión**.
 - **Mapa de 24 carreras** (CONVENCIONES §12): cuatro regiones (desierto, bosque, nieve,
   volcán) con caminos que se bifurcan y un jefe al final de cada una. Las estrellas (3 por
   ganar, 2 por el segundo puesto, 1 por el tercero) abren jefes y regiones.
+- **Pista al azar**: una pista nueva cada vez, sin fin, con rivales a tu nivel. Da premio, no
+  estrellas, y se comparte por su semilla (`#t=<semilla>`).
 - **Reta a un amigo**: cada carrera es determinista y se comparte por enlace (`#r=<carrera>`).
   Compartir da 3 nitros, una vez por carrera.
 - **Giro analógico**: en táctil, un volante (cuanto más lejos del centro, más gira), el pedal
@@ -56,11 +58,13 @@ npm run test:e2e   # Playwright sobre el build
 | `src/race.js` | Pantalla de carrera: bucle, mandos y marcador |
 | `src/main.js` | Mapa, taller, resultado y compartir |
 
-Trazados (`LAYOUTS`): frijol, ocho, peine, martillo, triángulo, reloj de arena, óvalo y bota;
-cada uno también en sentido contrario. Son polígonos: los lados salen rectos y las esquinas,
-arcos de círculo.
+Las pistas se **arman por piezas** a partir de una semilla (`generateLayout` en `src/track.js`):
+sobre una cuadrícula de 3×3 casillas se elige un grupo de casillas pegadas y la pista es su
+contorno: cada lado es una recta, cada vértice una curva, y algunas esquinas se cortan en
+diagonal. La misma semilla da siempre la misma pista (por eso se comparte por enlace), y
+3.000 semillas dan más de 2.000 formas distintas. Quedan ocho trazados dibujados a mano
+(`LAYOUTS`): el óvalo de la primera carrera y los de cruce (ocho, reloj de arena) de los jefes.
 
-Añadir una pista: un polígono nuevo en `LAYOUTS` (`src/track.js`); el primer lado lleva la salida,
-y `npm test` comprueba que la máquina lo completa.
+`npm test` comprueba que la máquina lo completa.
 
 Licencia MIT.

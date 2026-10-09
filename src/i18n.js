@@ -11,6 +11,8 @@ const DICT = {
     desert: 'Desierto', forest: 'Bosque', snow: 'Nieve', volcano: 'Volcán',
     needStars: 'Te faltan {n} estrellas para abrir esta carrera',
     needPrev: 'Termina antes la carrera anterior del camino',
+    randomTrack: 'Pista al azar', randomHelp: 'Una pista nueva cada vez, armada por piezas. Da premio, no estrellas.',
+    anotherTrack: 'Otra pista',
     sharedRace: 'Carrera compartida',
     sharedIntro: 'Te retaron a esta carrera. Corres con una camioneta estándar.',
 
@@ -56,6 +58,8 @@ const DICT = {
     desert: 'Desert', forest: 'Forest', snow: 'Snow', volcano: 'Volcano',
     needStars: 'You need {n} more stars to open this race',
     needPrev: 'Finish the previous race on this path first',
+    randomTrack: 'Random track', randomHelp: 'A new track every time, built from pieces. Pays a prize, no stars.',
+    anotherTrack: 'Another track',
     sharedRace: 'Shared race',
     sharedIntro: 'You were challenged to this race. You drive a standard truck.',
 

@@ -25,6 +25,76 @@ export const LAYOUTS = [
   { name: 'oval', pts: [[0, 0], [1, 0], [1, 1], [0, 1]] },
   { name: 'boot', pts: [[1, 1], [0, 1], [0, 0], [0.52, 0], [0.52, 0.5], [1, 0.5]] },
 ];
+// ---------- Pistas por piezas ----------
+// Una cuadrícula de 3×3 casillas. Se elige un grupo de casillas pegadas entre sí (crece desde
+// una, casilla a casilla, según la semilla) y la pista es su CONTORNO: cada lado de casilla es
+// una pieza recta y cada vértice una curva; algunas esquinas se cortan en diagonal. El paso de
+// la cuadrícula es el ancho de la pista, así que dos tramos nunca se pisan.
+const CELLS = 3;
+/**
+ * El polígono de una pista generada (en el cuadro unidad), con el lado más largo primero.
+ * @param {number} seed
+ * @param {number} [size]  cuántas casillas (3..7): más casillas, más curvas
+ */
+export function generateLayout (seed, size = 4) {
+  const rand = rng((seed ^ 0x7f4a7c15) >>> 0);
+  const key = (x, y) => y * CELLS + x;
+  const want = Math.max(3, Math.min(7, Math.round(size)));
+  const ok = (set) => {
+    const has = (x, y) => x >= 0 && y >= 0 && x < CELLS && y < CELLS && set.has(key(x, y));
+    // Sin hueco en medio y sin dos casillas que se toquen solo por la esquina: así el
+    // contorno es UN circuito cerrado.
+    if (!has(1, 1) && has(1, 0) && has(0, 1) && has(2, 1) && has(1, 2)) return false;
+    for (let vy = 1; vy < CELLS; vy++) for (let vx = 1; vx < CELLS; vx++) {
+      const a = has(vx - 1, vy - 1), b = has(vx, vy - 1), c = has(vx - 1, vy), d = has(vx, vy);
+      if ((a && d && !b && !c) || (b && c && !a && !d)) return false;
+    }
+    return true;
+  };
+  const set = new Set([key(Math.floor(rand() * CELLS), Math.floor(rand() * CELLS))]);
+  for (let tries = 0; tries < 200 && set.size < want; tries++) {
+    const from = [...set][Math.floor(rand() * set.size)];
+    const [dx, dy] = [[1, 0], [-1, 0], [0, 1], [0, -1]][Math.floor(rand() * 4)];
+    const x = from % CELLS + dx, y = Math.floor(from / CELLS) + dy;
+    if (x < 0 || y < 0 || x >= CELLS || y >= CELLS || set.has(key(x, y))) continue;
+    set.add(key(x, y));
+    if (!ok(set)) set.delete(key(x, y));
+  }
+  // Contorno, en el sentido de las agujas: de cada casilla, los lados que dan afuera.
+  const has = (x, y) => x >= 0 && y >= 0 && x < CELLS && y < CELLS && set.has(key(x, y));
+  const next = new Map();
+  const edge = (x1, y1, x2, y2) => next.set(x1 + ',' + y1, [x2, y2]);
+  for (const k of set) {
+    const x = k % CELLS, y = Math.floor(k / CELLS);
+    if (!has(x, y - 1)) edge(x, y, x + 1, y);
+    if (!has(x + 1, y)) edge(x + 1, y, x + 1, y + 1);
+    if (!has(x, y + 1)) edge(x + 1, y + 1, x, y + 1);
+    if (!has(x - 1, y)) edge(x, y + 1, x, y);
+  }
+  const first = [...next.keys()].sort()[0];
+  let loop = [], cur = first.split(',').map(Number);
+  do { loop.push(cur); cur = next.get(cur[0] + ',' + cur[1]); } while (cur[0] + ',' + cur[1] !== first);
+  // Fuera los vértices que quedan en medio de una recta.
+  const turn = (a, b, c) => (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+  loop = loop.filter((b, i) => turn(loop[(i + loop.length - 1) % loop.length], b, loop[(i + 1) % loop.length]) !== 0);
+  // Esquinas en diagonal: solo las que giran hacia dentro del circuito (se alejan de los demás tramos).
+  const m = loop.length, out = [];
+  for (let i = 0; i < m; i++) {
+    const a = loop[(i + m - 1) % m], b = loop[i], c = loop[(i + 1) % m];
+    if (turn(a, b, c) > 0 && rand() < 0.4) {
+      const la = Math.hypot(b[0] - a[0], b[1] - a[1]), lc = Math.hypot(c[0] - b[0], c[1] - b[1]);
+      out.push([b[0] - (b[0] - a[0]) / la * 0.4, b[1] - (b[1] - a[1]) / la * 0.4], [b[0] + (c[0] - b[0]) / lc * 0.4, b[1] + (c[1] - b[1]) / lc * 0.4]);
+    } else out.push(b);
+  }
+  // La salida va en el lado más largo.
+  let best = 0, bestLen = 0;
+  for (let i = 0; i < out.length; i++) {
+    const q = out[(i + 1) % out.length], len = Math.hypot(q[0] - out[i][0], q[1] - out[i][1]) + rand() * 0.01;
+    if (len > bestLen) { bestLen = len; best = i; }
+  }
+  return out.slice(best).concat(out.slice(0, best)).map(q => [q[0] / CELLS, q[1] / CELLS]);
+}
+
 const CORNER_R = 60;           // radio de las curvas (se achica solo si el lado es corto)
 
 /** PRNG determinista (mulberry32). */
@@ -134,10 +204,13 @@ function buildField (s) {
 
 /**
  * Construye una pista.
- * @param {{layout:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, whoops?:number, mounds?:number, rocks?:number}} spec
+ * @param {{layout?:number, size?:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, whoops?:number, mounds?:number, rocks?:number}} spec
  */
 export function buildTrack (spec) {
-  const layout = LAYOUTS[spec.layout % LAYOUTS.length];
+  // Con `layout`, uno de los trazados dibujados a mano; sin él, una pista por piezas de su semilla.
+  const layout = spec.layout != null
+    ? LAYOUTS[spec.layout % LAYOUTS.length]
+    : { name: 'gen', pts: generateLayout(spec.seed, spec.size) };
   let pts = layout.pts.map(p => [FX + p[0] * FW, FY + p[1] * FH]);
   // Al revés: mismo trazado en sentido contrario, conservando p0→p1 como recta de salida.
   if (spec.reversed) pts = [pts[1], pts[0]].concat(pts.slice(2).reverse());

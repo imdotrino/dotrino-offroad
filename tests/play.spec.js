@@ -6,6 +6,7 @@ async function open (page, hash = '') {
     window.__TEST_VAULT_PROMISE__ = Promise.resolve(null)
     try { localStorage.setItem('dotrino.lang', 'es'); localStorage.setItem('offroad.mute', '1') } catch {}
   })
+  await page.goto('about:blank')
   await page.goto('/' + hash)
   await page.waitForFunction(() => !!window.__offroad)
 }
@@ -72,6 +73,26 @@ test('llegar cuarto no completa la carrera', async ({ page }) => {
   expect(p.nodes.n0).toBeUndefined()
   expect(p.money).toBe(70000)
   await expect(page.getByTestId('result-next')).toHaveCount(0)
+})
+
+test('pista al azar: cada semilla es una pista, da premio sin estrellas y se comparte por su semilla', async ({ page }) => {
+  await open(page)
+  await page.getByTestId('random-btn').click()
+  await expect(page.getByTestId('race-canvas')).toBeVisible()
+  const a = await page.evaluate(() => ({ seed: window.__offroad.race.race.track.spec.seed, n: window.__offroad.race.race.track.n }))
+  await page.evaluate(() => window.__offroad.race.forceFinish(1))
+  await expect(page.getByTestId('result-prize')).toHaveText('$50.000')
+  const p = await page.evaluate(() => window.__offroad.progress)
+  expect(p.money).toBe(110000)
+  expect(Object.keys(p.nodes)).toHaveLength(0)
+  // Otra pista: semilla distinta.
+  await page.getByTestId('result-another').click()
+  await page.waitForFunction((old) => window.__offroad.race && window.__offroad.race.race.track.spec.seed !== old, a.seed)
+  // El enlace de la primera vuelve a dar exactamente esa pista.
+  await open(page, '#t=' + a.seed)
+  await expect(page.getByTestId('race-canvas')).toBeVisible()
+  const b = await page.evaluate(() => ({ seed: window.__offroad.race.race.track.spec.seed, n: window.__offroad.race.race.track.n }))
+  expect(b).toEqual(a)
 })
 
 test('un enlace compartido abre esa carrera sin tocar el avance', async ({ page }) => {

@@ -10,9 +10,9 @@ const REGIONS = [
   { key: 'desert', hills: 1, grip: 1, ramps: 1, bumps: 1, puddles: 1, gate: 0, bossGate: 6,
     rows: [[6, 0], [0, 0], [3, 0], [4, 0], [2, 0], [1, 0]] },
   { key: 'forest', hills: 1, grip: 0.95, ramps: 1, bumps: 2, puddles: 3, gate: 9, bossGate: 20,
-    rows: [[3, 1], [5, 0], [7, 0], [0, 1], [6, 1], [2, 1]] },
+    rows: [[3, 1], [5, 0], [7, 0], [0, 1], [6, 1], [5, 0]] },
   { key: 'snow', hills: 2, grip: 0.7, ramps: 2, bumps: 2, puddles: 2, gate: 24, bossGate: 38,
-    rows: [[4, 1], [1, 1], [2, 0], [7, 1], [5, 1], [3, 0]] },
+    rows: [[4, 1], [1, 1], [2, 0], [7, 1], [5, 1], [1, 1]] },
   { key: 'volcano', hills: 2, grip: 0.9, ramps: 2, bumps: 2, puddles: 4, gate: 44, bossGate: 60,
     rows: [[0, 0], [7, 0], [5, 0], [1, 0], [2, 1], [5, 1]] },
 ];
@@ -34,11 +34,14 @@ function build () {
     const reg = REGIONS[ri];
     const [layout, reversed] = reg.rows[slot];
     const boss = type === 'boss';
+    // La primera carrera es un óvalo y los jefes corren en trazados con cruce; el resto son
+    // pistas por piezas, cada vez con más casillas (más curvas).
+    const made = !boss && idx !== 0;
     const n = {
       id: 'n' + idx, type, region: ri, x, row, requires, requireMode, gate,
       label: boss ? 0 : depth + 1,
       race: {
-        layout, reversed: !!reversed, seed: seedFor(idx),
+        layout: made ? undefined : layout, size: 3 + ri + (idx % 2), reversed: made ? idx % 3 === 0 : !!reversed, seed: seedFor(idx),
         bumps: reg.bumps + (boss ? 1 : 0), ...OBSTACLES[reg.key],
         hills: reg.hills, ramps: reg.ramps, grip: reg.grip, laps: boss ? 4 : 3,
         // Nivel de las máquinas (escala 0..6 de las mejoras).
@@ -119,6 +122,27 @@ export function followingNodeId (progress, id) {
   }
   return nextNodeId(progress);
 }
+
+/**
+ * Una carrera suelta en una pista por piezas: cada semilla es una pista distinta, sin fin.
+ * Los rivales salen al nivel del jugador. No da estrellas; sí premio.
+ */
+export function randomNode (seed, up) {
+  const s = seed >>> 0;
+  const ri = s % REGIONS.length, reg = REGIONS[ri];
+  const level = (up.tires + up.shocks + up.accel + up.speed) / 4;
+  return {
+    id: 't' + s, type: 'random', region: ri, label: 0, requires: [], gate: 0,
+    prizeRegion: Math.min(REGIONS.length - 1, Math.floor(level / 1.5)),
+    race: {
+      layout: undefined, size: 3 + (s >>> 3) % 5, reversed: !!((s >>> 2) & 1), seed: s,
+      bumps: reg.bumps, ...OBSTACLES[reg.key],
+      hills: reg.hills, ramps: reg.ramps, grip: reg.grip, laps: 3, level, boss: false,
+    },
+  };
+}
+/** Premio de una carrera suelta: la mitad del de una carrera del mapa de tu nivel. */
+export const randomPrize = (node, place) => Math.round(prizeFor({ region: node.prizeRegion, type: 'normal' }, place) / 2000) * 1000;
 
 // --- Economía ---
 export const UPGRADES = ['tires', 'shocks', 'accel', 'speed'];

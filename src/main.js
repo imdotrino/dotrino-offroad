@@ -5,7 +5,7 @@ import { loadProgress, saveProgress, onStoreProblem, storeHandle } from './store
 import {
   allNodes, nodeById, edges, maxRow, regionKey, totalStars, maxStars, nodeStars, isDone,
   isUnlocked, starsMissing, nextNodeId, followingNodeId, starsForPlace, prizeFor,
-  cashPickupValue, rivalsFor, UPGRADES, MAX_UP, NITRO_PRICE, START, upgradePrice,
+  cashPickupValue, rivalsFor, randomNode, randomPrize, UPGRADES, MAX_UP, NITRO_PRICE, START, upgradePrice,
 } from './levels.js';
 import { startRace } from './race.js';
 import { makeSprites, truckIcon } from './render.js';
@@ -20,6 +20,7 @@ import '@dotrino/topbar';    // barra superior estándar del ecosistema (§5)
 const SVG = (p, fill) => `<svg viewBox="0 0 24 24" width="22" height="22" fill="${fill || 'none'}" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 const IC = {
   star: SVG('<path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 9.5l6.9-.6z"/>', 'currentColor'),
+  dice: SVG('<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><circle cx="8.5" cy="8.5" r="1" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/>'),
   lock: SVG('<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>'),
   crown: SVG('<path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/>', 'currentColor'),
   share: SVG('<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>'),
@@ -125,7 +126,11 @@ function renderMap () {
     h('button', { class: 'btn primary', 'data-testid': 'garage-btn', onclick: () => openGarage() },
       h('span', { class: 'ic', html: IC.wrench }), t('garage')),
   );
-  clear(screen).append(bar, renderMapGraph());
+  // Pista al azar: una pista por piezas nueva cada vez (sin fin), fuera del campeonato.
+  const random = h('button', { class: 'card random', 'data-testid': 'random-btn', onclick: () => startRandom() },
+    h('span', { class: 'ic', html: IC.dice }),
+    h('span', { class: 'card-txt' }, h('b', {}, t('randomTrack')), h('span', { class: 'muted' }, t('randomHelp'))));
+  clear(screen).append(bar, random, renderMapGraph());
 
   // El mapa sube: enfocar la próxima carrera.
   requestAnimationFrame(() => {
@@ -196,10 +201,17 @@ function renderMapGraph () {
 // =====================================================================
 //  Carrera
 // =====================================================================
+/** Una carrera suelta en la pista de esa semilla (o en una nueva). */
+function startRandom (seed) {
+  const s = seed || (1 + Math.floor(Math.random() * 0x7ffffffe));
+  startNode(null, { node: randomNode(s, progress.up) });
+}
+
 function startNode (id, opts = {}) {
-  const n = nodeById(id);
+  const n = opts.node || nodeById(id);
   if (!n) return;
-  const unlocked = isUnlocked(progress, id);
+  const loose = n.type === 'random';
+  const unlocked = loose || isUnlocked(progress, id);
   if (!unlocked && !opts.shared) {
     const miss = starsMissing(progress, id);
     showToast(miss > 0 ? t('needStars', { n: miss }) : t('needPrev'));
@@ -222,7 +234,7 @@ function startNode (id, opts = {}) {
   view = 'race';
   document.body.classList.add('mode-race');
   clear(screen);
-  const title = (n.type === 'boss' ? t('boss') : t('race') + ' ' + n.label) + ' · ' + t(regionKey(n.region));
+  const title = (loose ? t('randomTrack') : n.type === 'boss' ? t('boss') : t('race') + ' ' + n.label) + ' · ' + t(regionKey(n.region));
   const handle = startRace({
     host: screen, spec: n.race, region: regionKey(n.region), sprites, title,
     trucks: [player, ...rivalsFor(n)],
@@ -235,6 +247,16 @@ function startNode (id, opts = {}) {
 
 function onRaceEnd (node, shared, res) {
   const place = res.place;
+  if (node.type === 'random') {
+    // Carrera suelta: premio y nitros, sin estrellas ni mapa.
+    const prize = randomPrize(node, place);
+    const picked = res.cash * 5000 * (node.prizeRegion + 1);
+    progress.money += prize + picked;
+    progress.nitro = res.nitroLeft;
+    persist();
+    showResult(node, false, { ...res, stars: starsForPlace(place), prize, picked, openedRegion: null });
+    return;
+  }
   const stars = starsForPlace(place);
   const prize = shared ? 0 : prizeFor(node, place);
   const picked = shared ? 0 : res.cash * cashPickupValue(node);
@@ -260,11 +282,12 @@ function onRaceEnd (node, shared, res) {
 
 function showResult (node, shared, r) {
   const won = r.stars > 0;
+  const loose = node.type === 'random';
   const isBoss = node.type === 'boss';
-  const nextId = !shared && won ? followingNodeId(progress, node.id) : null;
+  const nextId = !shared && !loose && won ? followingNodeId(progress, node.id) : null;
   const already = !!progress.nodes[node.id]?.shared;
   const close = () => { overlay.remove(); };
-  const again = () => { close(); current?.handle.destroy(); current = null; startNode(node.id, { shared }); };
+  const again = () => { close(); current?.handle.destroy(); current = null; startNode(node.id, { shared, node: loose ? node : undefined }); };
   const toMap = () => { close(); current?.handle.destroy(); current = null; renderMap(); };
 
   const meta = h('div', { class: 'win-meta' },
@@ -281,12 +304,13 @@ function showResult (node, shared, r) {
       r.openedRegion != null ? h('div', { class: 'region-open' }, t('regionUnlocked', { r: t(regionKey(r.openedRegion)) })) : null,
       // Compartir da algo jugable (§12.3): 3 nitros, una vez por carrera.
       h('div', { class: 'win-share' },
-        h('button', { class: 'btn block', 'data-testid': 'result-share', onclick: () => shareNode(node.id) },
+        h('button', { class: 'btn block', 'data-testid': 'result-share', onclick: () => shareNode(loose ? 't' + node.race.seed : node.id) },
           h('span', { class: 'ic', html: IC.share }), t('challengeFriend')),
-        !shared ? h('div', { class: 'share-hint', id: 'shareHint' }, already ? t('shareAlready') : t('shareToEarn')) : null),
+        !shared && !loose ? h('div', { class: 'share-hint', id: 'shareHint' }, already ? t('shareAlready') : t('shareToEarn')) : null),
       h('div', { class: 'win-actions' },
         nextId ? h('button', { class: 'btn primary block', 'data-testid': 'result-next', onclick: () => { close(); current?.handle.destroy(); current = null; startNode(nextId); } }, t('nextRace')) : null,
-        h('button', { class: 'btn block' + (nextId ? '' : ' primary'), 'data-testid': 'result-retry', onclick: again }, t('retry')),
+        loose ? h('button', { class: 'btn primary block', 'data-testid': 'result-another', onclick: () => { close(); current?.handle.destroy(); current = null; startRandom(); } }, t('anotherTrack')) : null,
+        h('button', { class: 'btn block' + (nextId || loose ? '' : ' primary'), 'data-testid': 'result-retry', onclick: again }, t('retry')),
         !shared ? h('button', { class: 'btn block', 'data-testid': 'result-garage', onclick: () => { toMap(); openGarage(); } },
           h('span', { class: 'ic', html: IC.wrench }), t('garage')) : null,
         h('button', { class: 'btn block', 'data-testid': 'result-map', onclick: toMap }, t('backToMap')),
@@ -298,7 +322,8 @@ function showResult (node, shared, r) {
 // ---------- Compartir (§12.3): la misma carrera para el amigo, por #fragment ----------
 function shareNode (id) {
   shareNodeId = id;
-  shareEl.url = location.origin + location.pathname + '#r=' + id;
+  // Una carrera del mapa viaja por su nombre (#r=n5); una pista al azar, por su semilla (#t=…).
+  shareEl.url = location.origin + location.pathname + (id[0] === 't' ? '#t=' + id.slice(1) : '#r=' + id);
   shareEl.text = t('shareText');
   shareEl.lang = getLang();
   shareEl.open = true;
@@ -379,6 +404,12 @@ function sharedNodeFromHash () {
   return m && nodeById(m[1]) ? m[1] : null;
 }
 function consumeHash () {
+  const seed = /(?:^#|[#&])t=(\d{1,10})/.exec(location.hash || '');
+  if (seed && Number(seed[1]) > 0) {
+    history.replaceState(history.state, '', location.pathname + location.search);
+    startRandom(Number(seed[1]));
+    return true;
+  }
   const id = sharedNodeFromHash();
   if (!id) return false;
   history.replaceState(history.state, '', location.pathname + location.search);

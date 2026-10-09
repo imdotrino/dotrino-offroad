@@ -2,9 +2,9 @@
 // por la máquina) tienen que completar las vueltas sin atascarse, y la carrera tiene que ser
 // determinista. Es lo que comprueba que un trazado nuevo se puede correr.
 import assert from 'node:assert/strict';
-import { buildTrack, distAt, LAYOUTS, W, H } from '../src/track.js';
+import { buildTrack, distAt, generateLayout, LAYOUTS, W, H } from '../src/track.js';
 import { createRace, step } from '../src/sim.js';
-import { allNodes, rivalsFor, isUnlocked, totalStars, starsForPlace, prizeFor } from '../src/levels.js';
+import { allNodes, rivalsFor, isUnlocked, totalStars, starsForPlace, prizeFor, randomNode } from '../src/levels.js';
 
 function run (node, playerLevel) {
   const track = buildTrack(node.race);
@@ -38,6 +38,34 @@ for (let i = 0; i < LAYOUTS.length; i++) {
     assert.ok(t.ramps.length >= 1, `${t.name}${reversed ? ' rev' : ''}: no straight long enough for a ramp`);
     assert.ok(t.samples[0].curv < 0.45, `${t.name}: start line is not on a straight (${t.samples[0].curv.toFixed(2)})`);
   }
+}
+
+// 1b. Pistas por piezas: hay muchas formas distintas, la misma semilla da la misma pista,
+//      caben en el mundo, dos tramos no se pisan, y la máquina las termina.
+{
+  const shapes = new Set();
+  for (let seed = 1; seed <= 3000; seed++) shapes.add(JSON.stringify(generateLayout(seed, 3 + seed % 5)));
+  assert.ok(shapes.size > 400, `only ${shapes.size} distinct generated layouts`);
+  assert.deepEqual(generateLayout(77, 5), generateLayout(77, 5));
+  for (let seed = 11; seed < 51; seed++) {
+    const node = randomNode(seed * 7919, { tires: 1, shocks: 1, accel: 1, speed: 1 });
+    const t = buildTrack(node.race);
+    for (const q of t.samples) assert.ok(q.x > t.half + 4 && q.x < W - t.half - 4 && q.y > t.half + 4 && q.y < H - t.half - 4, `gen ${seed}: leaves the world`);
+    for (let i = 0; i < t.n; i++) {
+      for (let j = i + 40; j < t.n; j++) {
+        if (Math.min(j - i, t.n - (j - i)) < 40) continue;
+        const d = Math.hypot(t.samples[i].x - t.samples[j].x, t.samples[i].y - t.samples[j].y);
+        assert.ok(d > t.half * 1.6, `gen ${seed}: two stretches overlap (${d.toFixed(0)} px apart)`);
+      }
+    }
+    assert.ok(t.samples[0].curv < 0.45, `gen ${seed}: start line is not on a straight`);
+    if (seed % 4 === 0) {
+      const { race, resets } = run(node, 1);
+      for (const tr of race.trucks) assert.ok(tr.finished, `gen ${seed}: truck ${tr.color} did not finish`);
+      assert.ok(resets <= 3, `gen ${seed}: ${resets} stuck resets`);
+    }
+  }
+  console.log(`generated layouts: ${shapes.size} distinct out of 3000 seeds`);
 }
 
 // 2. Todas las carreras del mapa se pueden terminar.

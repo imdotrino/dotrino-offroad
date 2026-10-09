@@ -73,6 +73,15 @@ body.mode-race dotrino-topbar { display: none; }
   display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px;
   background: #d8362c; color: #ffe070; font-size: .7rem; font-weight: 900;
 }
+.card {
+  display: flex; align-items: center; gap: 12px; text-align: left;
+  width: calc(100% - 28px); max-width: 492px; margin: 4px auto 2px; padding: 12px 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text);
+}
+.card:hover { background: var(--surface2); }
+.card .ic svg { display: block; width: 26px; height: 26px; color: var(--accent-2); }
+.card-txt { display: flex; flex-direction: column; gap: 3px; }
+.card-txt .muted { font-size: .8rem; line-height: 1.3; }
 .map-scroll { flex: 1; display: flex; justify-content: center; padding: 10px 0 calc(env(safe-area-inset-bottom) + 34px); }
 .map-inner { position: relative; margin: 0 auto; }
 .map-edges { position: absolute; inset: 0; pointer-events: none; }
