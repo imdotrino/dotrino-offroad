@@ -1,6 +1,6 @@
 // Simulación de la carrera: lógica PURA y determinista (sin DOM ni reloj). La pantalla
 // (race.js) le pasa los mandos del jugador y dibuja el estado; tests/sim.mjs la corre sola.
-import { rng, distAt, heightAt, W, H } from './track.js';
+import { rng, distAt, heightAt, crossesLedge, W, H } from './track.js';
 
 export const MAX_LEVEL = 6;
 const TRUCK_R = 8;          // radio de choque de una camioneta contra las vallas
@@ -38,21 +38,31 @@ const WHEEL_L = 7, WHEEL_W = 5, WHEEL_MAX = 10;
  */
 export function groundAt (track, x, y, a) {
   const fx = Math.cos(a), fy = Math.sin(a);
-  const c = heightAt(track, x, y);
+  // Sobre la franja de un muro no se interpola entre píxeles: a medio píxel del corte la
+  // altura saldría a media pared. Ahí vale el píxel en el que se está.
+  const at = (px, py) => {
+    const k = Math.round(py) * W + Math.round(px);
+    return k >= 0 && k < W * H && track.ledge[k] ? track.height[k] : heightAt(track, px, py);
+  };
+  const c = at(x, y);
   const w = (dl, dw) => {
-    const h = heightAt(track, x + fx * dl - fy * dw, y + fy * dl + fx * dw);
-    return Math.abs(h - c) > WHEEL_MAX ? c : h;
+    const wx = x + fx * dl - fy * dw, wy = y + fy * dl + fx * dw;
+    const h = at(wx, wy);
+    // Una rueda al otro lado de un muro entre piezas no pisa nada: cuenta como el centro.
+    return Math.abs(h - c) > WHEEL_MAX || crossesLedge(track, x, y, wx, wy) ? c : h;
   };
   const fl = w(WHEEL_L, WHEEL_W), fr = w(WHEEL_L, -WHEEL_W), rl = w(-WHEEL_L, WHEEL_W), rr = w(-WHEEL_L, -WHEEL_W);
-  return {
-    // La carrocería descansa sobre la rueda que más alto pisa (una rueda no se hunde en una
-    // montaña), y nunca más abajo que lo que hay bajo el centro: en la cresta de una rampa
-    // (ruedas delanteras ya en el aire) sigue arriba hasta despegar.
-    h: Math.max(c, fl, fr, rl, rr),
-    c,
-    pitch: Math.atan((fl + fr - rl - rr) / 2 / (2 * WHEEL_L)),
-    roll: Math.atan((fl + rl - fr - rr) / 2 / (2 * WHEEL_W)),
-  };
+  // El plano que mejor pasa por las cuatro ruedas (en una cuesta pareja la carrocería va a
+  // la altura del centro, inclinada); si una rueda sobresale de ese plano (una montaña bajo
+  // un solo lado), la carrocería sube lo que haga falta para no hundirla. Y nunca más abajo
+  // que lo que hay bajo el centro: en la cresta de una rampa (ruedas delanteras ya en el
+  // aire) sigue arriba hasta despegar.
+  const mean = (fl + fr + rl + rr) / 4;
+  const sp = (fl + fr - rl - rr) / (4 * WHEEL_L), sr = (fl + rl - fr - rr) / (4 * WHEEL_W);
+  const over = Math.max(0,
+    fl - (mean + sp * WHEEL_L + sr * WHEEL_W), fr - (mean + sp * WHEEL_L - sr * WHEEL_W),
+    rl - (mean - sp * WHEEL_L + sr * WHEEL_W), rr - (mean - sp * WHEEL_L - sr * WHEEL_W));
+  return { h: Math.max(c, mean + over), c, pitch: Math.atan(sp), roll: Math.atan(sr) };
 }
 
 /**
@@ -119,19 +129,16 @@ function aiControl (race, tr) {
   }
   // Si entre la camioneta y ese punto hay un muro entre pisos (la pista pasa pegada a sí
   // misma a distinta altura), apunta más cerca, siguiendo su carril, hasta que no lo cruce.
-  const crossesLedge = (x1, y1, x2, y2) => {
-    const L = Math.hypot(x2 - x1, y2 - y1), steps = Math.max(1, Math.ceil(L / 3));
-    let prev = heightAt(track, x1, y1);
-    for (let q = 1; q <= steps; q++) {
-      const h = heightAt(track, x1 + (x2 - x1) * q / steps, y1 + (y2 - y1) * q / steps);
-      if (Math.abs(h - prev) > 3) return true;
-      prev = h;
-    }
-    return false;
-  };
-  for (let o = look - 2; o >= 2 && crossesLedge(tr.x, tr.y, tx, ty); o -= 2) {
+  for (let o = look - 2; o >= 2 && crossesLedge(track, tr.x, tr.y, tx, ty); o -= 2) {
     const q = s[(tr.idx + o) % n];
     tx = q.x - q.ty * lane; ty = q.y + q.tx * lane;
+  }
+  // Si ni así (el carril elegido queda al otro lado del muro), sigue por el carril en el que
+  // ya va: el muro corre a lo largo de la pista, nunca la cruza.
+  if (crossesLedge(track, tr.x, tr.y, tx, ty)) {
+    const q = s[tr.idx];
+    lane = Math.max(-26, Math.min(26, -(tr.x - q.x) * q.ty + (tr.y - q.y) * q.tx));
+    tx = tgt.x - tgt.ty * lane; ty = tgt.y + tgt.tx * lane;
   }
   const diff = wrapAngle(Math.atan2(ty - tr.y, tx - tr.x) - tr.a);
   let steer = Math.max(-1, Math.min(1, diff * 3.2));         // gira en proporción, como un volante
@@ -202,19 +209,20 @@ function stepTruck (race, tr, input, dt) {
   const px = tr.x, py = tr.y;
   tr.x += tr.vx * dt; tr.y += tr.vy * dt;
 
-  // Bordes entre piezas a distinto piso: un muro con valla. Rodando no se sube ni se baja por
-  // ahí (lo que es muro sube más de 52° respecto a lo avanzado; un desnivel de 45° no llega);
-  // se rebota como contra la valla de fuera. En el aire sí se puede caer encima del piso alto.
-  const moved = Math.hypot(tr.x - px, tr.y - py);
-  if (!tr.air && Math.abs(groundAt(track, tr.x, tr.y, tr.a).h - tr.g) > 1.3 * moved + 0.6) {
+  // Bordes entre piezas a distinto piso: un muro con valla. Rodando no se cruza (a ninguna
+  // velocidad: se mira si el paso cruza la franja del muro, no cuánto cambió la altura); se
+  // rebota como contra la valla de fuera. En el aire sí se puede caer encima del piso alto.
+  tr.walled = false;
+  if (!tr.air && crossesLedge(track, px, py, tr.x, tr.y)) {
     let gx = heightAt(track, px + 1, py) - heightAt(track, px - 1, py);
     let gy = heightAt(track, px, py + 1) - heightAt(track, px, py - 1);
-    if (tr.g > heightAt(track, tr.x, tr.y)) { gx = -gx; gy = -gy; }      // desde arriba, el muro está hacia abajo
+    if (tr.gc > heightAt(track, tr.x, tr.y)) { gx = -gx; gy = -gy; }     // desde arriba, el muro está hacia abajo (por el suelo bajo el CENTRO: la carrocería puede ir más alta)
     const gl = Math.hypot(gx, gy) || 1; gx /= gl; gy /= gl;
     const vn = tr.vx * gx + tr.vy * gy;
-    // Solo si va CONTRA el muro: si se aleja (acaba de caer justo en el borde) se la deja ir.
+    tr.x = px; tr.y = py;
+    // Solo si va CONTRA el muro se rebota; si se aleja (acaba de caer justo en el borde) se la deja ir.
     if (vn > 0) {
-      tr.x = px; tr.y = py;
+      tr.walled = true;
       tr.vx -= gx * vn * 1.25; tr.vy -= gy * vn * 1.25;
       tr.vx *= 0.9; tr.vy *= 0.9;
       if (vn > 25) race.events.push({ type: 'hit', k: tr.k });
@@ -264,9 +272,15 @@ function stepTruck (race, tr, input, dt) {
     // una subida, o la bajada de un nivel), Y hay de dónde saltar: una subida de 7 o más
     // (rampa, montaña) o un piso en alto. Un hueco (6 de hondo, desde el suelo) no da para
     // volar: se entra y se sale rodando, pegada al suelo.
+    // La subida que traía se mira ANTES de borrarla por la bajada de este cuadro: en la cresta
+    // el suelo cae de golpe y es justo entonces cuando cuenta lo que subió.
+    const climbed = tr.climb;
     if (rate > 0) tr.climb += gc - tr.gc; else if (rate < -1) tr.climb = 0;
     const falls = tr.gc + tr.rate * dt - 0.5 * GRAVITY * dt * dt - gc > 0.12;
-    if (falls && speed > 20 && (tr.climb >= 7 || tr.gc >= 10)) {
+    // Desde el borde de un muro entre piezas no se salta: el suelo cae igual bajo el centro,
+    // pero ahí lo que hay es una valla (crossesLedge la hace de pared).
+    const onLedge = track.ledge[Math.round(tr.y) * W + Math.round(tr.x)] !== 0;
+    if (falls && !onLedge && speed > 20 && (climbed >= 7 || tr.gc >= 10)) {
       tr.air = true; tr.airT = 0; tr.climb = 0;
       tr.alt = tr.g; tr.vz = Math.min(VZ_MAX, tr.rate > 0 ? tr.rate * LAUNCH : tr.rate);
       race.events.push({ type: 'jump', k: tr.k });
@@ -409,7 +423,8 @@ export function step (race, dt, input) {
       // Trabada = sin avanzar Y casi parada. Por fuera de una esquina cuadrada se recorre un
       // buen trecho sin que cambie el punto más cercano de la trazada: eso no es estar trabada.
       if (tr.progress > tr.bestProgress) { tr.bestProgress = tr.progress; tr.stuckT = 0; }
-      else if (Math.hypot(tr.vx, tr.vy) < 14) tr.stuckT += dt;
+      // Empujar contra un muro con velocidad también es estar trabada.
+      else if (Math.hypot(tr.vx, tr.vy) < 14 || tr.walled) tr.stuckT += dt;
       else tr.stuckT = Math.max(0, tr.stuckT - dt);
       if (tr.stuckT > 2.5) {
         const s = race.track.samples[tr.idx];

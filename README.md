@@ -59,11 +59,18 @@ Son **piezas independientes que encajan**: cada esquina es un arco a altura cons
 recta una pieza con la altura uniforme a lo ancho (se proyecta sobre el eje de la recta, no se
 toma de la muestra más cercana) y la rampa dentro de la parte recta, sin tocar los arcos. Así
 dos piezas solo se juntan donde miden lo mismo. Si la pista pasa pegada a sí misma a distinta
-altura, entre los dos tramos queda un **muro de contención con valla** (`track.ledge`): la
-física lo trata como pared por los dos lados (rodando no se sube ni se cae por ahí; en el aire
-sí se puede caer encima) y la máquina lo esquiva al apuntar. Lo comprueba `tests/sim.mjs`
-sobre todo el ancho de las 24 pistas y de 40 al azar: todo salto entre píxeles vecinos es una
-rampa (≤ 45°) o un muro declarado, nunca algo intermedio.
+altura, entre los dos tramos queda un **muro de contención con valla** (`track.ledge`), pero
+solo donde el desnivel entre las dos piezas llega a 4: donde es menor (el pie de una rampa
+pegada a una pieza llana) no hay valla y el escalón se tiende a 45° como mucho, y se cruza. El
+muro es vertical (el suavizado no promedia a través de él) y para la física es pared por los
+dos lados a cualquier velocidad: se decide por si el paso **cruza la franja** del muro
+(`crossesLedge`), no por cuánto cambió la altura; desde su borde no se despega (en el aire sí se
+puede caer encima), y la máquina lo esquiva al apuntar. Un montículo no se pone a menos de 40
+px de un muro (sería un trampolín al tramo vecino), y rocas y huecos nunca caen en la
+parrilla de salida ni donde se aterriza tras una rampa. Lo comprueba `tests/sim.mjs` sobre todo
+el ancho de las 24 pistas y de 40 al azar: todo salto entre píxeles vecinos es una rampa (≤ 45°)
+o un muro declarado, nunca algo intermedio; y una camioneta lanzada contra un muro, por
+arriba o por abajo, a 40 o a 130 px/s, no lo cruza.
 
 Ningún desnivel pasa de 45°: las bajadas bruscas de un nivel y la caída de una rampa son
 planos a 45°, y los obstáculos nunca se ponen donde cambia el piso. Obstáculos: rampas
@@ -80,11 +87,12 @@ y sigue la forma del hueco. Se cruzan rodando, sin despegar.
 
 Las camionetas son un campo de alturas con las aristas biseladas, iluminado por su normal
 (`truckModel`), girado en 32 ángulos. **Pisan con las cuatro ruedas**, no con un punto
-(`groundAt` en `sim.js`: ejes a ±7 px, ruedas a ±5): la carrocería descansa sobre la rueda que
-más alto pisa, así que una montaña o una roca al costado la levanta y la ladea en vez de
-atravesarla; el despegue se decide por lo que hay bajo el centro, que es lo que se acaba de
-golpe en la cresta de una rampa. Un desnivel de un piso bajo una rueda (un muro entre
-módulos) no cuenta como suelo que se pise. Además se inclinan con la normal del piso (cabeceo a lo
+(`groundAt` en `sim.js`: ejes a ±7 px, ruedas a ±5): la carrocería va sobre el plano que mejor
+pasa por las cuatro ruedas (en una cuesta pareja, a la altura del centro e inclinada) y, si una
+rueda sobresale de ese plano (una montaña bajo un solo lado), sube lo que haga falta para no
+hundirla; así se ladea en vez de atravesarla. El despegue se decide por lo que hay bajo el
+centro, que es lo que se acaba de golpe en la cresta de una rampa. Una rueda al otro lado de un
+muro entre piezas no pisa nada: cuenta como el centro. Además se inclinan con la normal del piso (cabeceo a lo
 largo del eje y balanceo entre las ruedas, con la suavidad de una suspensión) y en el aire
 levantan el morro al subir y lo bajan al caer; los cuadros inclinados se dibujan la primera vez
 que hacen falta (`renderTruck`) y se guardan en caché a pasos de ~5°, con tope de 1.500 cuadros (unos 21 MB; se tira el que lleva más sin usarse).

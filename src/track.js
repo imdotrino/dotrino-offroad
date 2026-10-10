@@ -509,6 +509,12 @@ export function buildTrack (spec) {
     for (let o = -m; o <= m; o++) if (Math.abs(level[(i + o + n) % n] - level[(i + o + 1 + n) % n]) > 0.05) return true;
     return false;
   };
+  // Si en las m muestras ANTERIORES a i cambia el piso: ahí se aterriza de lo que se voló en
+  // la cresta de la subida o al salir de la bajada.
+  const afterSlope = (i, m) => {
+    for (let o = 1; o <= m; o++) if (Math.abs(level[(i - o + n) % n] - level[(i - o + 1 + n) % n]) > 0.05) return true;
+    return false;
+  };
 
   // Lomas: en tramos rectos, lejos de la salida y separadas entre sí.
   const circ = (a, b) => Math.min(Math.abs(a - b), n - Math.abs(a - b));
@@ -605,7 +611,11 @@ export function buildTrack (spec) {
     }
   }
   // BORDES entre piezas de lado a distinto piso: el lado alto lleva la valla (dos píxeles de
-  // ancho, como la de fuera) y para la física es una pared por los dos lados.
+  // ancho, como la de fuera) y para la física es una pared por los dos lados (sim.js la
+  // decide por `crossesLedge`, no por la altura). Es muro solo donde el desnivel entre las
+  // dos piezas llega a LEDGE_MIN: donde es menor (el pie de una rampa pegada a una pieza
+  // llana) no hay valla, y el escalón se tiende a 45° como mucho para que se pueda cruzar.
+  const LEDGE_MIN = 4, MAX_SLOPE = 1.15;   // 1,15 y no 1,2: margen para el redondeo en coma flotante
   const ledge = new Uint8Array(W * H);
   for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
     const k = y * W + x;
@@ -613,13 +623,25 @@ export function buildTrack (spec) {
     let high = false, low = false;
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
       const j = k + dy * W + dx;
-      if (field[j] >= HALF) continue;
-      const diff = height[k] - height[j];
-      // Más de 1,2 por píxel ya no es una rampa (las rampas van a 45° como mucho): es muro.
-      if (diff > 1.2 && Math.abs(dx) + Math.abs(dy) <= 2) high = true;
-      else if (diff < -1.2 && Math.abs(dx) <= 1 && Math.abs(dy) <= 1) low = true;
+      if (field[j] >= HALF || Math.abs(dx) + Math.abs(dy) > 2) continue;
+      // Pendiente POR PÍXEL hacia ese vecino: más de 1,2 ya no es una rampa (van a 45° como
+      // mucho, 1 por píxel). Sin dividir por la distancia, un vecino a 2 px sobre una rampa
+      // de 45° daba 2 y la valla salía a lo largo de la rampa.
+      const diff = height[k] - height[j], slope = diff / Math.hypot(dx, dy);
+      if (diff >= LEDGE_MIN && slope > MAX_SLOPE) high = true;
+      else if (diff <= -LEDGE_MIN && slope < -MAX_SLOPE) low = true;
     }
     ledge[k] = high ? 2 : low ? 1 : 0;
+  }
+  // Un montículo pegado a un muro entre piezas es un trampolín por encima de la valla hacia
+  // el tramo vecino (y la máquina se pierde allí): fuera los que caen a menos de 40 px de uno (radio 11 más lo que vuela).
+  for (let m = mounds.length - 1; m >= 0; m--) {
+    const q = samples[mounds[m].i], mx = Math.round(q.x - q.ty * mounds[m].lat), my = Math.round(q.y + q.tx * mounds[m].lat);
+    let nearWall = false;
+    for (let y = Math.max(0, my - 18); y <= Math.min(H - 1, my + 18) && !nearWall; y++) for (let x = Math.max(0, mx - 40); x <= Math.min(W - 1, mx + 40); x++) {
+      if (ledge[y * W + x] === 2 && Math.hypot(x - mx, y - my) <= 40) { nearWall = true; break; }
+    }
+    if (nearWall) mounds.splice(m, 1);
   }
   for (let k = 0; k < W * H; k++) {
     const d = field[k] - HALF;
@@ -646,14 +668,41 @@ export function buildTrack (spec) {
   // Suavizado: en el interior de una curva muchos puntos caen en muestras distintas y la
   // altura sale a rayas; dos pasadas de promedio las borran.
   const tmp = new Float32Array(W * H);
+  // No se promedia A TRAVÉS de un muro entre piezas: el lado alto (ledge 2) solo con lo suyo
+  // y el bajo (1) con lo suyo, así el corte queda vertical en vez de tenderse en 3 px de
+  // cuesta por la que la camioneta trepaba antes de chocar.
   for (let pass = 0; pass < 1; pass++) {
     for (let y = 1; y < H - 1; y++) {
       for (let x = 1; x < W - 1; x++) {
-        const k = y * W + x;
-        tmp[k] = (height[k - W - 1] + height[k - W] + height[k - W + 1] + height[k - 1] + height[k] + height[k + 1] + height[k + W - 1] + height[k + W] + height[k + W + 1]) / 9;
+        const k = y * W + x, lk = ledge[k];
+        let sum = 0, cnt = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const j = k + dy * W + dx, lj = ledge[j];
+          if (lk && lj && lk !== lj) continue;
+          sum += height[j]; cnt++;
+        }
+        tmp[k] = sum / cnt;
       }
     }
     height.set(tmp);
+  }
+  // Fuera del muro nada sube más de MAX_SLOPE por píxel: lo que sobresale se baja hasta
+  // que encaje con sus vecinos (el muro no se toca, y no tira de nadie a través de él). Va
+  // DESPUÉS del suavizado, que al promediar junto al final de un muro vuelve a empinar.
+  for (let pass = 0; pass < 60; pass++) {
+    let changed = 0;
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const k = y * W + x;
+      if (field[k] >= HALF || ledge[k]) continue;
+      let lim = height[k];
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const j = k + dy * W + dx;
+        if ((!dx && !dy) || field[j] >= HALF || ledge[j]) continue;
+        lim = Math.min(lim, height[j] + MAX_SLOPE * Math.hypot(dx, dy));
+      }
+      if (lim < height[k] - 1e-3) { height[k] = lim; changed++; }
+    }
+    if (!changed) break;
   }
 
   // Charcos: círculos a un lado del eje (se pueden esquivar).
@@ -702,7 +751,7 @@ export function buildTrack (spec) {
         edge = (1 - e) * rad * Math.hypot(pt.rx * Math.cos(th), pt.ry * Math.sin(th));
       }
       if (edge <= 0) continue;
-      const dep = Math.min(edge, pt.d);                                // del borde al fondo a 45°
+      const dep = Math.min(edge * 0.9, pt.d);                          // del borde al fondo, algo menos de 45° (con el redondeo a píxel, 45° justos pasaban de 45°)
       pt.dep[y * pt.w + x] = dep;
       if (dep >= pt.d - 0.01) full++;
     }
@@ -710,7 +759,7 @@ export function buildTrack (spec) {
     return pt;
   };
   for (let tries = 0; tries < 300 && pits.length < (spec.pits ?? 0); tries++) {
-    const i = 14 + Math.floor(rand() * (n - 28));
+    const i = 14 + Math.floor(rand() * (n - 50));          // tampoco en la parrilla de salida
     if (nearCross(i, 12) || onRamp(i, 6) || onSlope(i, 8) || samples[i].curv > 0.3) continue;
     if (bumps.some(b => circ(b, i) < 8) || mounds.some(m => circ(m.i, i) < 9) || whoops.some(w => circ(w + 5, i) < 12)) continue;
     const r = rand(), type = r < 0.3 ? 'trench' : r < 0.5 ? 'crater' : 'hole';
@@ -732,10 +781,16 @@ export function buildTrack (spec) {
 
   // Rocas: obstáculos SÓLIDOS a un lado del eje. Se rodean (o se saltan desde una rampa).
   const rocks = [];
-  for (let tries = 0; tries < 400 && rocks.length < (spec.rocks ?? 2); tries++) {
-    const i = 18 + Math.floor(rand() * (n - 30));
+  // En un trazado con muchos cambios de piso (el ocho) casi no queda recta lejos de un
+  // aterrizaje: si no cabe ninguna, se admite algo de curva. El margen de aterrizaje no se
+  // afloja nunca.
+  for (const curvMax of [0.3, 0.6]) for (let tries = 0; tries < 400 && rocks.length < (spec.rocks ?? 2); tries++) {
+    // Nunca en la parrilla de salida (las camionetas arrancan en las muestras n-9 y n-18).
+    const i = 18 + Math.floor(rand() * (n - 54));
     // En recta: en plena curva o en un cruce una roca es una trampa, no un obstáculo.
-    if (nearCross(i, 14) || onRamp(i, 4) || onSlope(i, 5) || samples[i].curv > 0.3 || samples[(i + n - 8) % n].curv > 0.3) continue;
+    // Tampoco donde se aterriza tras una rampa o un cambio de piso (24 muestras, unos 70 px):
+    // una roca ahí es un choque sin aviso, y la máquina se queda empujándola.
+    if (nearCross(i, 14) || onRamp(i, 18) || onSlope(i, 5) || afterSlope(i, 24) || samples[i].curv > curvMax || samples[(i + n - 8) % n].curv > curvMax) continue;
     const q = samples[i], lat = (rand() < 0.5 ? -1 : 1) * (6 + rand() * 22);
     const r = { x: q.x - q.ty * lat, y: q.y + q.tx * lat, r: 4.5 + rand() * 1.5, i, lat };
     if (field[Math.round(r.y) * W + Math.round(r.x)] > HALF - r.r - 4) continue;       // pegada a la valla no
@@ -759,3 +814,21 @@ function sample (f, x, y, out) {
 export const distAt = (track, x, y) => sample(track.field, x, y, 999);
 /** Altura del suelo en un punto cualquiera. */
 export const heightAt = (track, x, y) => sample(track.height, x, y, 0);
+/**
+ * Si el segmento (x1,y1)→(x2,y2) cruza un muro entre piezas: pasa del lado alto (`ledge` 2)
+ * al bajo (1) o al revés. Se mira píxel a píxel, así que no se salta la franja a ninguna
+ * velocidad.
+ */
+export function crossesLedge (track, x1, y1, x2, y2) {
+  const L = Math.hypot(x2 - x1, y2 - y1), steps = Math.max(1, Math.ceil(L));
+  let side = 0;
+  for (let q = 0; q <= steps; q++) {
+    const x = Math.round(x1 + (x2 - x1) * q / steps), y = Math.round(y1 + (y2 - y1) * q / steps);
+    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+    const l = track.ledge[y * W + x];
+    if (!l) continue;
+    if (side && l !== side) return true;
+    side = l;
+  }
+  return false;
+}

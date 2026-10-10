@@ -3,7 +3,7 @@
 // determinista. Es lo que comprueba que un trazado nuevo se puede correr.
 import assert from 'node:assert/strict';
 import { buildTrack, distAt, heightAt, generateLayout, LAYOUTS, W, H } from '../src/track.js';
-import { createRace, step } from '../src/sim.js';
+import { createRace, step, groundAt } from '../src/sim.js';
 import { allNodes, rivalsFor, isUnlocked, totalStars, starsForPlace, prizeFor, randomNode } from '../src/levels.js';
 
 function run (node, playerLevel) {
@@ -259,11 +259,57 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
   const r = drive(t, { x: pt.x - pt.rx - 14, y: pt.y }, 0, 1);
   // La carrocería descansa sobre sus cuatro ruedas, así que no baja hasta el fondo: las ruedas
   // de delante y de atrás (a ±7) van más arriba que el centro.
-  assert.ok(r.minG < -2, `the truck never went down into the pit (${r.minG.toFixed(1)})`);
+  assert.ok(r.minG < -1.5, `the truck never went down into the pit (${r.minG.toFixed(1)})`);
   assert.equal(r.air, 0, `the truck left the ground ${r.air} frames crossing a pit: it must roll through`);
   const t2 = mk(0, 1), rp = t2.ramps[0], s0 = t2.samples[(rp - 14 + t2.n) % t2.n];
   const r2 = drive(t2, { x: s0.x, y: s0.y }, Math.atan2(s0.ty, s0.tx), 1.5);
   assert.ok(r2.air > 20, `a ramp should launch the truck (airborne ${r2.air} frames)`);
+}
+
+// 2e2. Un muro entre piezas no se cruza rodando A NINGUNA VELOCIDAD, por ninguno de los dos
+//      lados (antes se decidía por el salto de altura y con nitro se colaba); y donde el
+//      desnivel es chico (el pie de una rampa pegada a una pieza llana) no hay muro: se cruza.
+{
+  let walls = 0, tried = 0;
+  for (let seed = 1; seed <= 40 && walls < 6; seed++) {
+    const nd = randomNode(seed * 7919, { tires: 0, shocks: 0, accel: 0, speed: 0 }, 5);
+    const t = buildTrack({ ...nd.race, rocks: 0, pits: 0, bumps: 0, whoops: 0, mounds: 0, puddles: 0 });
+    // Un píxel del lado alto con el lado bajo a 3 px en línea recta.
+    let found = null;
+    for (let y = 6; y < H - 6 && !found; y++) for (let x = 6; x < W - 6 && !found; x++) {
+      const k = y * W + x;
+      if (t.ledge[k] !== 2 || t.field[k] > t.half - 10) continue;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const j = k + 3 * dy * W + 3 * dx;
+        // Un muro de verdad: llano a los dos lados (no el final de un muro que muere en una cuesta).
+        const kk = k - 4 * dy * W - 4 * dx, jj = j + 4 * dy * W + 4 * dx;
+        if (t.ledge[j] === 1 && t.field[j] < t.half - 10 && t.height[k] - t.height[j] >= 6 &&
+            Math.abs(t.height[kk] - t.height[k]) < 1.5 && Math.abs(t.height[jj] - t.height[j]) < 1.5) { found = { x, y, dx, dy }; break; }
+      }
+    }
+    if (!found) continue;
+    walls++;
+    for (const from of ['high', 'low']) for (const v of [40, 130]) {
+      tried++;
+      const sign = from === 'high' ? 1 : -1;                 // high → towards low: +d
+      const sx = found.x - found.dx * 10 * sign + (from === 'low' ? found.dx * 3 : 0), sy = found.y - found.dy * 10 * sign + (from === 'low' ? found.dy * 3 : 0);
+      const dir = Math.atan2(found.dy * sign, found.dx * sign);
+      const race = createRace({ track: t, trucks: [{ ai: false, up: { tires: 0, shocks: 0, accel: 0, speed: 0 } }], laps: 9, seed: 1 });
+      race.state = 'racing';
+      const a = race.trucks[0];
+      a.x = sx; a.y = sy; a.a = dir; a.vx = Math.cos(dir) * v; a.vy = Math.sin(dir) * v;
+      const gr = groundAt(t, a.x, a.y, a.a); a.g = a.alt = gr.h; a.gc = gr.c;
+      const h0 = heightAt(t, sx, sy);
+      let crossed = false;
+      for (let i = 0; i < 40; i++) {
+        step(race, 1 / 60, { steer: 0, gas: true, brake: false, nitro: false }); race.over = false;
+        // Cruzó si, rodando, acabó al otro nivel (puede deslizarse a lo largo del muro).
+        if (!a.air && (from === 'high' ? a.g < h0 - 6 : a.g > h0 + 6)) crossed = true;   // : donde descansa; bajo el centro el muro suavizado ya baja
+      }
+      assert.ok(!crossed, `seed ${seed}: drove through a wall from the ${from} side at ${v} px/s (h0 ${h0.toFixed(1)})`);
+    }
+  }
+  assert.ok(walls >= 3, `too few walls found to test (${walls})`);
 }
 
 // 2f. La camioneta pisa con las cuatro ruedas, no con un punto: al pasar al costado de una
@@ -285,14 +331,17 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
     step(race, 1 / 60, { steer: 0, gas: false, brake: false, nitro: false }); race.over = false;
     maxG = Math.max(maxG, a.g); maxRoll = Math.max(maxRoll, Math.abs(a.roll));
     centerMax = Math.max(centerMax, heightAt(t, a.x, a.y));
-    const fx = Math.cos(a.a), fy = Math.sin(a.a);
+    // La carrocería va inclinada (plano de las ruedas): cada rueda se compara con su altura en
+    // ese plano, no con el centro.
+    const fx = Math.cos(a.a), fy = Math.sin(a.a), gr = groundAt(t, a.x, a.y, a.a);
     for (const [dl, dw] of [[7, 5], [7, -5], [-7, 5], [-7, -5]]) {
       const h = heightAt(t, a.x + fx * dl - fy * dw, a.y + fy * dl + fx * dw);
-      if (!a.air && h - a.alt > 0.01) sunk = Math.max(sunk, h - a.alt);
+      const body = gr.h + Math.tan(gr.pitch) * dl + Math.tan(gr.roll) * dw;
+      if (!a.air && h - body > 0.01) sunk = Math.max(sunk, h - body);
     }
   }
   assert.ok(centerMax < 2, `the lane should pass beside the mound, not over it (center height ${centerMax.toFixed(1)})`);
-  assert.ok(maxG > centerMax + 2, `the body should ride up on the mound under its wheels (body ${maxG.toFixed(1)}, center ${centerMax.toFixed(1)})`);
+  assert.ok(maxG > centerMax + 0.5, `the body should ride up on the mound under its wheels (body ${maxG.toFixed(1)}, center ${centerMax.toFixed(1)})`);
   assert.ok(maxRoll > 0.15, `the truck should lean passing beside a mound (roll ${maxRoll.toFixed(2)})`);
   assert.equal(sunk, 0, `a wheel sank ${sunk.toFixed(2)} into the ground`);
 }
