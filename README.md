@@ -97,6 +97,11 @@ largo del eje y balanceo entre las ruedas, con la suavidad de una suspensión) y
 levantan el morro al subir y lo bajan al caer; los cuadros inclinados se dibujan la primera vez
 que hacen falta (`renderTruck`) y se guardan en caché a pasos de ~5°, con tope de 1.500 cuadros (unos 21 MB; se tira el que lleva más sin usarse).
 
+Adornos (`DECO`, `DECO_SETS` en `render.js`): cada región mezcla cuatro o cinco clases por el
+campo (unos 420 por pista, más densos cerca de la valla) y lleva una fila de borde pegada a la
+valla por fuera (llantas, conos, pacas, banderines, barriles). Sobre la pista: rodadas, frenadas
+en las curvas (dos rayas por carril, entrecortadas), piedritas y matas junto a la valla.
+
 Las sombras salen de las alturas (luz del noroeste): una valla, una roca, un talud o el borde
 de una rampa arrojan una sombra tan larga como altos son.
 

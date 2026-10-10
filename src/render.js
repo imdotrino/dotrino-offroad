@@ -20,13 +20,13 @@ export const screenX = (x, y) => x + SHEAR * (H - 1 - y);
 
 export const PALETTES = {
   desert: { rock: [150, 132, 112], out: [216, 172, 104], out2: [202, 156, 90], track: [152, 106, 62], track2: [140, 96, 54],
-    wallA: [222, 58, 48], wallB: [240, 240, 232], mud: [92, 62, 38], mudHi: [124, 90, 58], dust: '#d9b98a', deco: 'cactus' },
+    wallA: [222, 58, 48], wallB: [240, 240, 232], mud: [92, 62, 38], mudHi: [124, 90, 58], dust: '#d9b98a', deco: 'cactus', tuft: [184, 160, 88] },
   forest: { rock: [122, 92, 60], out: [72, 130, 64], out2: [60, 114, 56], track: [130, 94, 58], track2: [116, 82, 50],
-    wallA: [240, 200, 60], wallB: [58, 58, 68], mud: [70, 48, 30], mudHi: [100, 72, 48], dust: '#b89a70', deco: 'bush' },
+    wallA: [240, 200, 60], wallB: [58, 58, 68], mud: [70, 48, 30], mudHi: [100, 72, 48], dust: '#b89a70', deco: 'bush', tuft: [74, 134, 70] },
   snow: { rock: [150, 190, 226], out: [228, 236, 246], out2: [208, 220, 236], track: [152, 154, 168], track2: [140, 142, 156],
-    wallA: [58, 118, 222], wallB: [250, 250, 250], mud: [118, 170, 212], mudHi: [184, 218, 242], dust: '#ffffff', deco: 'pine' },
+    wallA: [58, 118, 222], wallB: [250, 250, 250], mud: [118, 170, 212], mudHi: [184, 218, 242], dust: '#ffffff', deco: 'pine', tuft: [226, 234, 242] },
   volcano: { rock: [84, 66, 74], out: [46, 36, 50], out2: [58, 44, 60], track: [108, 90, 96], track2: [96, 78, 86],
-    wallA: [250, 140, 40], wallB: [38, 32, 38], mud: [232, 92, 30], mudHi: [255, 196, 72], dust: '#9a8088', deco: 'rock' },
+    wallA: [250, 140, 40], wallB: [38, 32, 38], mud: [232, 92, 30], mudHi: [255, 196, 72], dust: '#9a8088', deco: 'rock', tuft: [90, 70, 80] },
 };
 
 const hash = (x, y) => {
@@ -44,12 +44,39 @@ function blotch (x, y, s) {
   return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
 }
 
-// Adornos del terreno (fuera de la pista). Letras → color.
+// Adornos del terreno (fuera de la pista). Letras → color. Cada región mezcla varios, con su
+// peso, y a lo largo de la valla van los de borde de pista (llantas, conos, pacas, banderines).
 const DECO = {
   cactus: { rows: ['.g.', 'ggg', 'ggg', '.g.', '.g.'], colors: { g: '#3f8a4a' } },
+  saguaro: { rows: ['.g.g', 'gg.g', '.ggg', '.g..', '.g..', '.g..'], colors: { g: '#36803f' } },
+  drybush: { rows: ['.yy.', 'yYYy', '.yy.'], colors: { y: '#a08a48', Y: '#c0a858' } },
+  stone: { rows: ['.ss', 'sSs'], colors: { s: '#9a8468', S: '#bca888' } },
+  skull: { rows: ['ww', 'w.'], colors: { w: '#eee8d8' } },
   bush: { rows: ['.gg.', 'gGGg', 'gGGg', '.tt.'], colors: { g: '#2f6a34', G: '#3f8a44', t: '#5a3c22' } },
+  tree: { rows: ['.ggg.', 'gGGGg', 'gGGGg', '.ggg.', '..t..', '..t..'], colors: { g: '#2a5c30', G: '#3c7c40', t: '#5a3c22' } },
+  stump: { rows: ['tT', 'tt'], colors: { t: '#5a3c22', T: '#8a6a40' } },
+  fern: { rows: ['g.g', '.g.'], colors: { g: '#4c9a4c' } },
   pine: { rows: ['..g..', '.ggg.', '.gwg.', 'ggggg', '..t..'], colors: { g: '#2f6f52', w: '#f4f8fc', t: '#5a3c22' } },
+  bigpine: { rows: ['..g..', '.gwg.', '.ggg.', 'gwggg', 'ggggg', '..t..', '..t..'], colors: { g: '#28624a', w: '#f4f8fc', t: '#5a3c22' } },
+  snowrock: { rows: ['.ww.', 'wssw', 'ssss'], colors: { w: '#f4f8fc', s: '#7a8494' } },
+  snowman: { rows: ['.w.', 'www', 'www'], colors: { w: '#ffffff' } },
   rock: { rows: ['.rr.', 'rRRr', 'rrrr'], colors: { r: '#6a5560', R: '#8c7480' } },
+  lava: { rows: ['.oo.', 'oOOo', 'rrrr'], colors: { o: '#e8602a', O: '#ffb040', r: '#4a3038' } },
+  deadtree: { rows: ['t.t', '.t.', '.t.', '.t.'], colors: { t: '#3a2a30' } },
+  boulder: { rows: ['.rrr.', 'rRRRr', 'rRRrr', '.rrr.'], colors: { r: '#5a4650', R: '#7c6470' } },
+  // Al borde de la valla
+  tires: { rows: ['kk', 'kK', 'kk'], colors: { k: '#1e1e22', K: '#44444a' } },
+  cone: { rows: ['.o.', 'ooo', 'wWw'], colors: { o: '#f07a1a', w: '#f6f6f6', W: '#f07a1a' } },
+  bale: { rows: ['yyy', 'YYY'], colors: { y: '#d8b858', Y: '#b89838' } },
+  flag: { rows: ['pr', 'pr', 'p.', 'p.'], colors: { p: '#e8e8e8', r: '#e23b30' } },
+  barrel: { rows: ['bb', 'BB', 'bb'], colors: { b: '#3060c0', B: '#5080e0' } },
+};
+// Qué adornos lleva cada región: [nombre, peso] por el campo, y los de la valla.
+const DECO_SETS = {
+  cactus: { field: [['cactus', 4], ['saguaro', 2], ['drybush', 5], ['stone', 4], ['skull', 1]], fence: ['tires', 'cone', 'bale'] },
+  bush: { field: [['bush', 4], ['tree', 4], ['stump', 2], ['fern', 4]], fence: ['bale', 'tires', 'flag'] },
+  pine: { field: [['pine', 4], ['bigpine', 3], ['snowrock', 3], ['snowman', 1]], fence: ['flag', 'barrel', 'tires'] },
+  rock: { field: [['rock', 4], ['lava', 2], ['deadtree', 2], ['boulder', 2]], fence: ['barrel', 'tires', 'cone'] },
 };
 
 /** Pinta el terreno de una pista y devuelve el lienzo (W×H). */
@@ -81,6 +108,17 @@ export function paintTrack (track, regionKey) {
         const lat = -(x - q.x) * q.ty + (y - q.y) * q.tx;
         const rut = Math.sin(lat * 0.62 + blotch(fn * 4, 7, 26) * 5);
         if (rut > 0.9 && blotch(fn * 4, lat, 9) > 0.42) k *= 0.88; else if (rut < -0.94 && blotch(fn * 4 + 50, lat, 9) > 0.5) k *= 1.06;
+        // Frenadas en las curvas: dos rayas oscuras (las dos ruedas, a ±6 de un carril que
+        // va cambiando), entrecortadas, solo donde la trazada dobla.
+        if (q.curv > 0.22) {
+          const lane = (blotch(fn * 0.6, 3, 40) - 0.5) * 22, off = Math.abs(lat - lane);
+          if ((Math.abs(off - 6) < 0.9) && blotch(fn * 5, lat * 0.3, 6) > 0.3) k *= 0.72;
+        }
+        // Más piedritas, en pares (una clara y su sombra).
+        const pb = hash(x * 3 + 7, y * 5 + 1);
+        if (pb > 0.975) k *= 1.18; else if (pb < 0.012) k *= 0.7;
+        // Matas y basurilla pegadas a la valla, por dentro.
+        if (d > -7 && d < -2 && hash(x + 13, y + 29) > 0.9) { set(x, y, pal.tuft, 1); continue; }
         set(x, y, n2 < 0.5 ? pal.track : pal.track2, k);
       } else if (d < 1.5 || track.ledge[y * W + x] === 2) {
         // Franjas a lo largo de la valla (no un ajedrezado suelto): siguen la pista. La misma
@@ -287,17 +325,38 @@ export function paintTrack (track, regionKey) {
   ctx.putImageData(img, 0, 0);
   cv.depth = depth;
 
-  // Adornos fuera de la pista
-  const deco = DECO[pal.deco];
+  // Adornos fuera de la pista: muchos por el campo (varias clases, por peso), más densos
+  // cerca de la pista, y una fila de borde pegada a la valla por fuera (llantas, conos,
+  // pacas, banderines). Todos de atrás hacia delante.
+  const kinds = DECO_SETS[pal.deco];
   const rand = rng(track.spec.seed ^ 0x51ed);
+  const pick = () => { let tot = 0; for (const [, w] of kinds.field) tot += w; let r = rand() * tot; for (const [name, w] of kinds.field) { r -= w; if (r <= 0) return DECO[name]; } return DECO[kinds.field[0][0]]; };
   const spots = [];
-  for (let k = 0; k < 90; k++) {
+  const free = (x, y, d) => spots.every(s => Math.hypot(s[0] - x, s[1] - y) >= d);
+  for (let k = 0; k < 3000 && spots.length < 420; k++) {
     const x = 4 + Math.floor(rand() * (W - 10)), y = 8 + Math.floor(rand() * (H - 14));
-    if (track.field[y * W + x] - half < 10) continue;
-    spots.push([x, y]);
+    const d = track.field[y * W + x] - half;
+    if (d < 7) continue;
+    // Más cerca de la pista cae más: lejos se tira la mitad.
+    if (d > 40 && rand() < 0.5) continue;
+    if (!free(x, y, 4)) continue;
+    spots.push([x, y, pick()]);
+  }
+  // Fila de borde: cada tantas muestras, un adorno a 4-6 px por fuera de la valla, al lado
+  // que toque (donde de verdad hay fuera, no otra pista pegada).
+  for (let i = 0; i < track.n; i += 5) {
+    const q = track.samples[i], side = rand() < 0.5 ? 1 : -1, lat = half + 4 + rand() * 2;
+    for (const sg of [side, -side]) {
+      const x = Math.round(q.x - q.ty * lat * sg), y = Math.round(q.y + q.tx * lat * sg);
+      if (x < 4 || y < 8 || x >= W - 6 || y >= H - 6) continue;
+      const d = track.field[y * W + x] - half;
+      if (d < 3 || d > 9 || !free(x, y, 5)) continue;
+      spots.push([x, y, DECO[kinds.fence[Math.floor(rand() * kinds.fence.length)]]]);
+      break;
+    }
   }
   spots.sort((a, b) => a[1] - b[1]);      // los de atrás primero
-  for (const [x, y] of spots) {
+  for (const [x, y, deco] of spots) {
     const top = Math.round(screenY(y, hg[y * W + x])) - deco.rows.length;
     ctx.fillStyle = 'rgba(0,0,0,.22)';
     const dx = Math.round(screenX(x, y)) - x;
