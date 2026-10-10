@@ -60,6 +60,17 @@ propios. PWA instalable, **funciona sin conexión**.
 - **Chicanas de verdad**: el desvío es un cuadrado de una casilla, más ancho que la pista. Antes
   era una zeta de 39 px dentro de una pista de 76: se fundía con la recta en una plaza y se
   cruzaba recto sin castigo. Cabe en menos trazados (sobre todo en 3×3).
+- **Las vallas son insaltables** (0.24.0): la valla que corona un muro entre pisos para a la
+  camioneta también en el aire, vuele lo que vuele (antes pasaba por encima a más de 8 px y
+  aterrizaba sobre la línea del muro, trabada). Y si alguien queda trabado contra una pared
+  sin moverse 3 s, vuelve al eje (también el jugador).
+- **Economía** (0.24.0, simulada con `tests/_eco`-style: un jugador que corre la campaña en
+  orden, cobra su puesto + un sobre, y gasta todo en la mejora más barata): premios por puesto
+  60/45/28/10 k × (1 + 0,6·región) × 1,5 el jefe; sobre de dinero 3 k·(región+1); mejora
+  45 k + 35 k·nivel. Resultado: quien siempre gana llega al jefe final al mismo nivel que el
+  jefe (6,0); quien siempre es 2.º llega a 5,0; quien siempre es 3.º, a 4,0 y necesita el sin
+  fin. Antes (100/60/35/10 k y 40 k + 30 k·nivel) quien siempre ganaba llegaba a 8,5: dos
+  niveles y medio por encima del jefe, y compraba cuatro mejoras tras la primera carrera.
 - **Zoom** (botón de lupa en el HUD de la carrera; en táctil viene encendido): la vista sigue a tu camioneta ampliada ×2,2,
   con la cámara con un poco de retraso y sin salirse de la pista. El lienzo no cambia (sigue
   siendo `SW×SH`): se escala y desplaza con `transform` dentro del marco, que con zoom aprovecha

@@ -216,11 +216,9 @@ function stepTruck (race, tr, input, dt) {
   // velocidad: se mira si el paso cruza la franja del muro, no cuánto cambió la altura); se
   // rebota como contra la valla de fuera. En el aire sí se puede caer encima del piso alto.
   tr.walled = false;
-  // La valla que corona el muro (FENCE_H) también para a una camioneta EN EL AIRE que la roce:
-  // tirarse del piso alto al bajo era el atajo. Solo pasa por encima quien vuela más alto.
-  const FENCE_H = 8;
-  const overFence = tr.air && tr.alt > Math.max(tr.gc, heightAt(track, tr.x, tr.y)) + FENCE_H;
-  if (!overFence && crossesLedge(track, px, py, tr.x, tr.y)) {
+  // La valla que corona el muro es INSALTABLE: para también a una camioneta en el aire, vuele
+  // lo que vuele. Saltarla acababa con la camioneta encima de la línea del muro, trabada.
+  if (crossesLedge(track, px, py, tr.x, tr.y)) {
     let gx = heightAt(track, px + 1, py) - heightAt(track, px - 1, py);
     let gy = heightAt(track, px, py + 1) - heightAt(track, px, py - 1);
     if (tr.gc > heightAt(track, tr.x, tr.y)) { gx = -gx; gy = -gy; }     // desde arriba, el muro está hacia abajo (por el suelo bajo el CENTRO: la carrocería puede ir más alta)
@@ -454,6 +452,18 @@ export function step (race, dt, input) {
   for (const tr of race.trucks) {
     const inp = tr.ai ? aiControl(race, tr) : (input || { steer: 0, gas: false, brake: false, nitro: false });
     stepTruck(race, tr, inp, dt);
+    // Trabada contra una pared sin moverse (también el jugador: encima de la línea de un muro
+    // no hay por dónde salir): a los 3 s vuelve al eje.
+    if (!tr.ai && !tr.finished) {
+      if (tr.walled && Math.hypot(tr.vx, tr.vy) < 6) tr.jamT = (tr.jamT || 0) + dt; else tr.jamT = 0;
+      if (tr.jamT > 3) {
+        const s = race.track.samples[tr.idx];
+        tr.x = s.x; tr.y = s.y; tr.a = Math.atan2(s.ty, s.tx); tr.vx = tr.vy = 0; tr.jamT = 0;
+        const gr = groundAt(race.track, s.x, s.y, tr.a);
+        tr.g = tr.alt = gr.h; tr.gc = gr.c; tr.rate = 0; tr.air = false; tr.z = 0;
+        race.events.push({ type: 'shortcut', k: tr.k });
+      }
+    }
     // Una máquina atascada vuelve al eje (no se queda contra una pared para siempre).
     if (tr.ai && !tr.finished) {
       // Trabada = sin avanzar Y casi parada. Por fuera de una esquina cuadrada se recorre un

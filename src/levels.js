@@ -154,7 +154,7 @@ export function randomNode (seed, up, round = 0) {
   };
 }
 /** Premio de una ronda sin fin: la mitad del de una carrera del mapa, y un 35 % más por ronda. */
-export const randomPrize = (node, place) => Math.round(([0, 100000, 60000, 35000, 10000][place] || 0) * 0.5 * (1 + 0.35 * node.round) / 1000) * 1000;
+export const randomPrize = (node, place) => Math.round(([0, 60000, 40000, 25000, 10000][place] || 0) * 0.7 * (1 + 0.35 * node.round) / 1000) * 1000;
 
 // --- Economía ---
 export const UPGRADES = ['tires', 'shocks', 'accel', 'speed'];
@@ -162,15 +162,15 @@ export const UPGRADES = ['tires', 'shocks', 'accel', 'speed'];
 export const NITRO_PRICE = 8000;
 export const START = { money: 60000, nitro: 5, up: { tires: 0, shocks: 0, accel: 0, speed: 0 } };
 
-export const upgradePrice = (level) => 40000 + 30000 * level;
+export const upgradePrice = (level) => 45000 + 35000 * level;
 
 /** Premio por puesto en una carrera. */
 export function prizeFor (node, place) {
-  const base = [0, 100000, 60000, 35000, 10000][place] || 0;
+  const base = [0, 60000, 45000, 28000, 10000][place] || 0;
   const mult = (1 + 0.6 * node.region) * (node.type === 'boss' ? 1.5 : 1);
   return Math.round(base * mult / 1000) * 1000;
 }
-export const cashPickupValue = (node) => 5000 * (node.region + 1);
+export const cashPickupValue = (node) => 3000 * (node.region + 1);
 
 /** Los tres rivales de una carrera. El jefe corre de negro y casi no falla. */
 export function rivalsFor (node) {
