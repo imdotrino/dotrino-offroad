@@ -18,11 +18,13 @@ const REGIONS = [
 ];
 
 // Obstáculos por región: cada una añade más que la anterior.
+// `rampObs`: cuántos obstáculos lleva cada rampa (zanja tras el borde, puerta de rocas en la
+// subida, ondulado antes, cráter en el aterrizaje; ver RAMP_MENU en track.js).
 const OBSTACLES = {
-  desert: { pits: 2, maxLevel: 1, rocks: 3, mounds: 3, whoops: 1, puddles: 3 },
-  forest: { pits: 2, maxLevel: 2, rocks: 4, mounds: 3, whoops: 1, puddles: 5 },
-  snow: { pits: 1, maxLevel: 3, rocks: 4, mounds: 4, whoops: 2, puddles: 4 },
-  volcano: { pits: 3, maxLevel: 3, rocks: 6, mounds: 4, whoops: 2, puddles: 6 },
+  desert: { pits: 2, maxLevel: 1, rocks: 4, mounds: 4, whoops: 1, puddles: 4, rampObs: 1 },
+  forest: { pits: 3, maxLevel: 2, rocks: 5, mounds: 4, whoops: 2, puddles: 5, rampObs: 1 },
+  snow: { pits: 2, maxLevel: 3, rocks: 5, mounds: 5, whoops: 2, puddles: 5, rampObs: 2 },
+  volcano: { pits: 3, maxLevel: 3, rocks: 7, mounds: 5, whoops: 3, puddles: 7, rampObs: 2 },
 };
 
 const seedFor = (idx) => (200003 + idx * 7919) >>> 0;

@@ -50,6 +50,16 @@ propios. PWA instalable, **funciona sin conexión**.
   pista queda más de 10 muestras por delante, vuelve a donde iba («Sin atajos: de vuelta a la
   pista»); si queda por detrás, se sincroniza y sigue. Antes el avance se quedaba clavado y la
   vuelta no contaba hasta pasar por el punto perdido: cortar camino costaba una vuelta.
+- **Rampas con obstáculos** (`rampObs` por región, `RAMP_MENU` en `track.js`): cada rampa lleva
+  1 o 2 adornos distintos de un menú de cuatro: **zanja** tras el borde (a velocidad se vuela
+  por encima; despacio se cae dentro y se sale rodando), **puerta** de dos rocas en la subida
+  (±25 px: hay que entrar por el medio; la IA apunta al centro), **ondulado** justo antes de la
+  subida (solo en tramo llano y recto) y **cráter** a un lado del aterrizaje. Ondulado y puerta
+  no van juntos (se llegaba a las rocas dando botes y la IA se trababa). Además hay más rocas,
+  montículos, ondulados, charcos y huecos por región.
+- **Chicanas de verdad**: el desvío es un cuadrado de una casilla, más ancho que la pista. Antes
+  era una zeta de 39 px dentro de una pista de 76: se fundía con la recta en una plaza y se
+  cruzaba recto sin castigo. Cabe en menos trazados (sobre todo en 3×3).
 - **Zoom** (botón de lupa en el HUD de la carrera; en táctil viene encendido): la vista sigue a tu camioneta ampliada ×2,2,
   con la cámara con un poco de retraso y sin salirse de la pista. El lienzo no cambia (sigue
   siendo `SW×SH`): se escala y desplaza con `transform` dentro del marco, que con zoom aprovecha

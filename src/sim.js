@@ -117,6 +117,9 @@ function aiControl (race, tr) {
   let lane = tr.lane;
   for (const r of track.rocks) {
     const ahead = (r.i - tr.idx + n) % n;
+    // Una puerta de rocas en una rampa se pasa por el medio (abrirse hacia fuera deja a la
+    // máquina entre la roca y la valla).
+    if (r.gate && ahead > 0 && ahead < 24) { lane = 0; break; }
     if (ahead > 0 && ahead < 16 && Math.abs(lane - r.lat) < 13) lane = r.lat + (lane >= r.lat ? 15 : -15);
   }
   lane = Math.max(-26, Math.min(26, lane));

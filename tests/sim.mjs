@@ -62,7 +62,9 @@ for (let i = 0; i < LAYOUTS.length; i++) {
   }
   assert.ok(shapes.size > 400, `only ${shapes.size} distinct generated layouts`);
   assert.ok(crossed > 100, `only ${crossed} layouts with a crossing`);
-  assert.ok(chicaned > 200, `only ${chicaned} layouts with a chicane`);
+  // Desde que el desvío es más ancho que la pista (un cuadrado de una casilla), solo cabe
+  // donde hay una casilla libre al lado: salen menos, sobre todo en los trazados de 3×3.
+  assert.ok(chicaned > 150, `only ${chicaned} layouts with a chicane`);
   assert.deepEqual(generateLayout(77, 5), generateLayout(77, 5));
   assert.ok(!generateLayout(77, 6, { cross: 0, chicane: 0 }).crossed);
   let ranCross = 0, ranChicane = 0, ranPlain = 0;

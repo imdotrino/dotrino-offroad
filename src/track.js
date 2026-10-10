@@ -146,20 +146,31 @@ export function generateLayout (seed, size = 4, opts = {}) {
     const A = poly[i], B = poly[(i + 1) % poly.length], ax = axisOf(A, B);
     const len = ax < 0 ? 0 : Math.abs(B[ax] - A[ax]);
     if (len < 1.8 || rand() >= pChicane) continue;
-    const dir = Math.sign(B[ax] - A[ax]), mid = (A[ax] + B[ax]) / 2;
-    for (const side of rand() < 0.5 ? [1, -1] : [-1, 1]) {
-      const v = A[1 - ax] + side * 0.42;
+    const dir = Math.sign(B[ax] - A[ax]), mid0 = (A[ax] + B[ax]) / 2;
+    // El desvío tiene que ser MÁS ANCHO que la pista (2·HALF) más la valla: si no, la chicana
+    // se funde con la recta en una plaza y se cruza en línea recta sin castigo.
+    const off = Math.max(0.42, (2 * HALF + 14) / Math.min(PX[0], PX[1]));
+    const sides = rand() < 0.5 ? [1, -1] : [-1, 1];
+    // Se prueba a mitad de la recta y, si es larga, algo antes y algo después.
+    const shifts = len >= 2.2 ? [0, -0.3, 0.3] : [0];
+    let placed = false;
+    for (const sh of shifts) for (const side of sides) {
+      if (placed) break;
+      const mid = mid0 + dir * sh;
+      const v = A[1 - ax] + side * off;
       const pt = (u, w) => (ax ? [w, u] : [u, w]);
-      const jog = [pt(mid - dir * 0.2, v), pt(mid + dir * 0.2, v)];
+      // Un desvío CUADRADO (dos lados perpendiculares y el tramo de fuera): con la pista tan
+      // ancha, una zeta corta dejaba sus dos diagonales a menos de una pista de ancho.
+      const ins = [pt(mid - dir * 0.5, A[1 - ax]), pt(mid - dir * 0.5, v), pt(mid + dir * 0.5, v), pt(mid + dir * 0.5, A[1 - ax])];
+      // Ningún punto nuevo a menos de una pista de ancho de otro tramo.
       let fits = v > 0.02 && v < CELLS - 0.02;
       for (let k = 0; fits && k < poly.length; k++) {
         if (k === i || k === (i + 1) % poly.length || k === (i + poly.length - 1) % poly.length) continue;
-        if (jog.some(q => distSeg(q, poly[k], poly[(k + 1) % poly.length]) < 66)) fits = false;
+        if (ins.some(q => distSeg(q, poly[k], poly[(k + 1) % poly.length]) < 2 * HALF + 4)) fits = false;
       }
       if (!fits) continue;
-      poly.splice(i + 1, 0, pt(mid - dir * 0.52, A[1 - ax]), jog[0], jog[1], pt(mid + dir * 0.52, A[1 - ax]));
-      i += 4; chicanes++;
-      break;
+      poly.splice(i + 1, 0, ...ins);
+      i += 4; chicanes++; placed = true;
     }
   }
   const pts = poly.map(q => [q[0] / CELLS, q[1] / CELLS]);
@@ -384,7 +395,7 @@ function smoothCorners (field) {
 
 /**
  * Construye una pista.
- * @param {{layout?:number, size?:number, cross?:number, chicane?:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, whoops?:number, mounds?:number, rocks?:number, pits?:number, maxLevel?:number}} spec
+ * @param {{layout?:number, size?:number, cross?:number, chicane?:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, rampObs?:number, whoops?:number, mounds?:number, rocks?:number, pits?:number, maxLevel?:number}} spec
  */
 /**
  * VALLA ENTRE TRAMOS PEGADOS. La pista es tan ancha (2·HALF = 76 px) como casi una casilla del
@@ -607,6 +618,23 @@ export function buildTrack (spec) {
     }
   }
   const onRamp = (i, m) => ramps.some(r => { const c = (r - i + n) % n; return c <= RAMP_LEN + m || n - c <= 22 + m; });
+  // RAMPAS CON OBSTÁCULOS. Cada rampa lleva `rampObs` adornos de este menú (sin repetir):
+  //   gap    — una ZANJA justo después del borde: a velocidad se vuela por encima; despacio
+  //            se cae dentro y se sale rodando (cuesta).
+  //   gate   — dos ROCAS en la subida, una a cada lado: hay que entrar por el medio.
+  //   whoops — el ONDULADO justo antes de la subida: se llega dando botes.
+  //   crater — un CRÁTER a un lado del aterrizaje: aterrizar torcido cuesta.
+  const RAMP_MENU = spec.rampMenu || ['gap', 'gate', 'whoops', 'crater'];
+  const rampFx = ramps.map(r => {
+    const pool = RAMP_MENU.slice(), picked = [];
+    for (let k = 0; k < (spec.rampObs ?? 0) && pool.length; k++) {
+      const f = pool.splice(Math.floor(rand() * pool.length), 1)[0];
+      picked.push(f);
+      // Ondulado y puerta no van juntos: se llega a las rocas dando botes y la máquina se traba.
+      if (f === 'gate' || f === 'whoops') { const x = pool.indexOf(f === 'gate' ? 'whoops' : 'gate'); if (x >= 0) pool.splice(x, 1); }
+    }
+    return { r, fx: picked };
+  });
 
   const bumps = [];
   const wantBumps = spec.bumps ?? 3;
@@ -630,7 +658,13 @@ export function buildTrack (spec) {
   const straightAt = (i, len) => { for (let o = 0; o <= len; o++) if (samples[(i + o) % n].curv > 0.25) return false; return true; };
   // Ondulado: tres resaltos seguidos.
   const whoops = [];
-  for (let tries = 0; tries < 300 && whoops.length < (spec.whoops ?? 1); tries++) {
+  // El ondulado de una rampa va justo antes de la subida, solo si ese tramo es llano y recto
+  // (sobre una bajada de piso sumaba las dos pendientes).
+  for (const { r, fx } of rampFx) if (fx.includes('whoops')) {
+    const i = (r - RAMP_LEN - 16 + n) % n;
+    if (straightAt(i, 12) && !nearCross(i, 12) && !onSlope(i, 16)) whoops.push(i);
+  }
+  for (let tries = 0; tries < 300 && whoops.length < (spec.whoops ?? 1) + whoops.length; tries++) {
     const i = 16 + Math.floor(rand() * (n - 44));
     if (!straightAt(i, 12) || nearCross(i, 12) || onRamp(i, 16) || onSlope(i, 16) || bumps.some(b => circ(b, i) < 18) || hills.some(q => circ(q.i, i) < 16) || whoops.some(w => circ(w, i) < 30)) continue;
     whoops.push(i);
@@ -818,7 +852,17 @@ export function buildTrack (spec) {
     pt.floor = full;
     return pt;
   };
-  for (let tries = 0; tries < 300 && pits.length < (spec.pits ?? 0); tries++) {
+  for (const { r, fx } of rampFx) {
+    // La zanja va pasada la bajada a 45° (RAMP_H/STEP muestras tras el borde), con un respiro:
+    // pegada a la bajada sumaba las dos pendientes y salía un escalón de más de 45°.
+    if (fx.includes('gap')) { const i = (r + 10) % n, made = mkPit(samples[i], 'trench', 0); if (made.floor) { made.i = i; made.lat = 0; pits.push(made); } }
+    if (fx.includes('crater')) {
+      const i = (r + 12) % n, q = samples[i], lat = (rand() < 0.5 ? -1 : 1) * 17;
+      if (field[Math.round(q.y + q.tx * lat) * W + Math.round(q.x - q.ty * lat)] <= HALF - 21) { const made = mkPit(q, 'crater', lat); if (made.floor) { made.i = i; made.lat = lat; pits.push(made); } }
+    }
+  }
+  const fixedPits = pits.length;
+  for (let tries = 0; tries < 300 && pits.length < (spec.pits ?? 0) + fixedPits; tries++) {
     const i = 14 + Math.floor(rand() * (n - 50));          // tampoco en la parrilla de salida
     if (nearCross(i, 12) || onRamp(i, 6) || onSlope(i, 8) || samples[i].curv > 0.3) continue;
     if (bumps.some(b => circ(b, i) < 8) || mounds.some(m => circ(m.i, i) < 9) || whoops.some(w => circ(w + 5, i) < 12)) continue;
@@ -841,10 +885,18 @@ export function buildTrack (spec) {
 
   // Rocas: obstáculos SÓLIDOS a un lado del eje. Se rodean (o se saltan desde una rampa).
   const rocks = [];
+  for (const { r, fx } of rampFx) if (fx.includes('gate')) {
+    const i = (r - 5 + n) % n, q = samples[i];
+    for (const lat of [-25, 25]) {
+      const rk = { x: q.x - q.ty * lat, y: q.y + q.tx * lat, r: 5, i, lat, gate: true };
+      if (field[Math.round(rk.y) * W + Math.round(rk.x)] <= HALF - rk.r - 4) rocks.push(rk);
+    }
+  }
+  const fixedRocks = rocks.length;
   // En un trazado con muchos cambios de piso (el ocho) casi no queda recta lejos de un
   // aterrizaje: si no cabe ninguna, se admite algo de curva. El margen de aterrizaje no se
   // afloja nunca.
-  for (const curvMax of [0.3, 0.6]) for (let tries = 0; tries < 400 && rocks.length < (spec.rocks ?? 2); tries++) {
+  for (const curvMax of [0.3, 0.6]) for (let tries = 0; tries < 400 && rocks.length < (spec.rocks ?? 2) + fixedRocks; tries++) {
     // Nunca en la parrilla de salida (las camionetas arrancan en las muestras n-9 y n-18).
     const i = 18 + Math.floor(rand() * (n - 54));
     // En recta: en plena curva o en un cruce una roca es una trampa, no un obstáculo.
