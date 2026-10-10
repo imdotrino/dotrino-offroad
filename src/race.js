@@ -4,7 +4,7 @@ import { h } from './dom.js';
 import { t } from './i18n.js';
 import { buildTrack } from './track.js';
 import { createRace, step, livePlace } from './sim.js';
-import { paintTrack, drawRace, emitParticles, stepParticles, PALETTES, SW as W, SH as H } from './render.js';
+import { paintTrack, drawRace, emitParticles, stepParticles, PALETTES, SW as W, SH as H, screenX, screenY } from './render.js';
 import * as audio from './audio.js';
 
 const DT = 1 / 60;
@@ -46,12 +46,27 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
   const hudNitro = h('b', { 'data-testid': 'hud-nitro' });
   const hudTime = h('b', { 'data-testid': 'hud-time' });
   const pauseBtn = h('button', { class: 'hud-btn', 'data-testid': 'pause-btn', 'aria-label': t('pause'), title: t('pause'), onclick: () => setPaused(true) }, '❚❚');
+  // Zoom: la vista sigue a tu camioneta ampliada (el lienzo no cambia; se escala y se desplaza
+  // dentro del marco). Es una preferencia de UI → localStorage. En el teléfono la pista entera
+  // queda muy pequeña.
+  const LS_ZOOM = 'offroad.zoom';
+  let zoom = false;
+  try { zoom = localStorage.getItem(LS_ZOOM) === '1'; } catch { /* modo privado */ }
+  const zoomBtn = h('button', { class: 'hud-btn zoom', 'data-testid': 'zoom-btn', 'aria-pressed': String(zoom), 'aria-label': t('zoom'), title: t('zoomHelp'), onclick: () => setZoom(!zoom) }, 'ZOOM');
+  function setZoom (on) {
+    zoom = on;
+    zoomBtn.setAttribute('aria-pressed', String(on));
+    try { localStorage.setItem(LS_ZOOM, on ? '1' : '0'); } catch { /* modo privado */ }
+    camX = camY = null;
+    if (!on) cv.style.transform = '';
+    layout();
+  }
   const hud = h('div', { class: 'race-hud' },
     h('span', { class: 'hud-item' }, hudPlace),
     h('span', { class: 'hud-item' }, h('i', {}, t('lap')), hudLap),
     h('span', { class: 'hud-item nitro' }, h('i', {}, 'N'), hudNitro),
     h('span', { class: 'hud-item time' }, hudTime),
-    pauseBtn,
+    zoomBtn, pauseBtn,
   );
   const big = h('div', { class: 'race-big', 'data-testid': 'race-big' });
   const note = h('div', { class: 'race-note' });
@@ -148,12 +163,29 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
   // ---------- Tamaño: la pista siempre entera y sin girar (la perspectiva tiene un "arriba"). ----------
   // En vertical queda a lo ancho, con los mandos DEBAJO; en horizontal, los mandos van encima
   // de sus esquinas.
+  let scale = 1, camX = null, camY = null;
+  const ZOOM = 2.2;
+  /** Con zoom: el lienzo se amplía y se desplaza para que tu camioneta quede en medio del
+   *  marco (sin salirse de la pista), con la cámara siguiéndola con un poco de retraso. */
+  function follow () {
+    if (!zoom) return;
+    const me = race.trucks[0];
+    const px = screenX(me.x, me.y) * scale, py = screenY(me.y, me.alt) * scale;
+    const fw = W * scale, fh = H * scale, ww = wrap.clientWidth, wh = wrap.clientHeight;
+    const tx = Math.max(ww - fw * ZOOM, Math.min(0, ww / 2 - px * ZOOM));
+    const ty = Math.max(wh - fh * ZOOM, Math.min(0, wh / 2 - py * ZOOM));
+    camX = camX == null ? tx : camX + (tx - camX) * 0.18;
+    camY = camY == null ? ty : camY + (ty - camY) * 0.18;
+    cv.style.transform = `translate(${camX.toFixed(1)}px, ${camY.toFixed(1)}px) scale(${ZOOM})`;
+  }
   function layout () {
     const portrait = stage.clientHeight > stage.clientWidth * 1.1;
     const vw = stage.clientWidth, vh = stage.clientHeight - hud.offsetHeight - (touch && portrait ? 252 : 0);
-    const s = Math.min(vw / W, vh / H);
+    const s = scale = Math.min(vw / W, vh / H);
     wrap.style.width = cv.style.width = W * s + 'px';
-    wrap.style.height = cv.style.height = H * s + 'px';
+    cv.style.height = H * s + 'px';
+    // Con zoom el marco aprovecha el alto libre (el lienzo ampliado lo cubre de sobra).
+    wrap.style.height = (zoom ? Math.min(vh, H * s * ZOOM) : H * s) + 'px';
     stage.classList.toggle('portrait', portrait);
     if (!race || race.state === 'countdown') note.textContent = (touch ? t('helpTouch') : t('helpKeys')) + (touch && portrait ? ' · ' + t('rotateHint') : '');
   }
@@ -251,6 +283,7 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
       if (race.over && !ended) finish();
     }
     drawRace(ctx, bg, race, sprites, fx, clock);
+    follow();
     paintHud();
   }
   audio.engineStart();

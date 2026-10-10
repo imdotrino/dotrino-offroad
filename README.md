@@ -34,6 +34,11 @@ propios. PWA instalable, **funciona sin conexión**.
   píxeles, barra de nivel vertical verde). Toda la casilla es el botón de comprar; si no
   alcanza, se ve deshabilitada y dice cuánto falta. La casilla «Volver al mapa» lleva la
   miniatura de la próxima carrera.
+- **Zoom** (botón ZOOM en el HUD de la carrera): la vista sigue a tu camioneta ampliada ×2,2,
+  con la cámara con un poco de retraso y sin salirse de la pista. El lienzo no cambia (sigue
+  siendo `SW×SH`): se escala y desplaza con `transform` dentro del marco, que con zoom aprovecha
+  todo el alto libre. Preferencia de UI en `localStorage` (`offroad.zoom`). En el teléfono la
+  pista entera queda muy pequeña.
 - **Sin fin**: una pista nueva en cada ronda. Los rivales salen un 15 % por delante del
   taller del jugador y cada ronda suman 0,45 niveles, sin techo (`ENDLESS_LEAD`,
   `ENDLESS_STEP` en `levels.js`); el taller tampoco tiene tope, pero cada nivel cuesta más

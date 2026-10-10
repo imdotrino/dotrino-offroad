@@ -169,15 +169,16 @@ body.mode-race dotrino-topbar { display: none; }
 .hud-item:first-child b { color: var(--gold); font-size: 1.15rem; }
 .hud-item.nitro i { color: #ff7a5c; font-weight: 900; }
 .hud-btn {
-  margin-left: 6px; width: 34px; height: 30px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--surface); color: var(--text); font-size: .7rem;
+  margin-left: 6px; min-width: 34px; height: 30px; padding: 0 6px; border-radius: var(--radius); border: 2px solid var(--ink);
+  background: var(--surface); color: var(--text); font-size: .7rem; font-weight: 900; box-shadow: var(--bevel);
 }
+.hud-btn.zoom[aria-pressed="true"] { background: var(--accent); color: #1d1206; }
 .race-wrap { position: relative; margin: auto; flex: none; overflow: hidden; }
 .race-stage.portrait .race-wrap { margin: 6vh auto auto; }
 .race-stage.portrait .race-big { top: 16%; }
 .race-stage.portrait .race-note { top: auto; bottom: 262px; }
 .race-canvas {
-  position: absolute; left: 0; top: 0; display: block;
+  position: absolute; left: 0; top: 0; display: block; transform-origin: 0 0; will-change: transform;
   image-rendering: pixelated; image-rendering: crisp-edges;
 }
 .race-big {
