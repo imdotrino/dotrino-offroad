@@ -644,10 +644,10 @@ export function stepParticles (fx, dt) {
  * entre carreras (con rodadas en los ya recorridos), un claro bajo cada carrera y los
  * adornos de cada región sueltos por el campo. Todo en píxeles de mapa; el lienzo se
  * amplía sin suavizar.
- * `bands`: [{ key, y0, y1 }] de arriba abajo; `trails`: [{ x1, y1, x2, y2, on }];
- * `pads`: [{ x, y, r }].
+ * `bands`: [{ key, end }] en orden a lo largo de `axis` ('y': de arriba abajo; 'x': de
+ * izquierda a derecha); `trails`: [{ x1, y1, x2, y2, on }]; `pads`: [{ x, y, r }].
  */
-export function paintMap ({ w, h, bands, trails, pads, seed = 7 }) {
+export function paintMap ({ w, h, bands, axis = 'y', trails, pads, seed = 7 }) {
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
   const ctx = cv.getContext('2d');
@@ -658,8 +658,8 @@ export function paintMap ({ w, h, bands, trails, pads, seed = 7 }) {
   };
   const palAt = (x, y) => {
     // El borde entre regiones serpentea y se come un par de píxeles a cada lado.
-    const yy = y + (blotch(x + 300, y, 7) - 0.5) * 9;
-    for (const b of bands) if (yy < b.y1) return PALETTES[b.key];
+    const u = (axis === 'x' ? x : y) + (blotch(x + 300, y, 7) - 0.5) * 9;
+    for (const b of bands) if (u < b.end) return PALETTES[b.key];
     return PALETTES[bands[bands.length - 1].key];
   };
   const segDist = (x, y, s) => {

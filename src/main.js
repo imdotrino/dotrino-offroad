@@ -128,45 +128,63 @@ function renderMap () {
   closeLayer();
   document.body.classList.remove('mode-race');
 
-  const bar = h('div', { class: 'stats-bar' },
-    h('div', { class: 'stat-chip', 'data-testid': 'stars-total', title: t('stars') },
-      h('span', { class: 'ic star', html: IC.star }), h('b', {}, String(totalStars(progress))), h('span', { class: 'muted' }, '/ ' + maxStars())),
-    h('div', { class: 'stat-chip', title: t('money') }, h('b', { 'data-testid': 'money-total' }, fmtMoney(progress.money))),
-    h('div', { class: 'stat-chip', title: t('nitros') }, h('span', { class: 'nitro-tag' }, 'N'), h('b', { 'data-testid': 'nitro-total' }, String(progress.nitro))),
-    h('button', { class: 'btn primary', 'data-testid': 'garage-btn', onclick: () => openGarage() },
-      h('span', { class: 'ic', html: IC.wrench }), t('garage')),
+  // Las acciones van FIJAS arriba (barra pegajosa): no hay que recorrer el mapa para verlas.
+  const bar = h('div', { class: 'map-actions' },
+    h('div', { class: 'stats-bar' },
+      h('div', { class: 'stat-chip', 'data-testid': 'stars-total', title: t('stars') },
+        h('span', { class: 'ic star', html: IC.star }), h('b', {}, String(totalStars(progress))), h('span', { class: 'muted' }, '/ ' + maxStars())),
+      h('div', { class: 'stat-chip', title: t('money') }, h('b', { 'data-testid': 'money-total' }, fmtMoney(progress.money))),
+      h('div', { class: 'stat-chip', title: t('nitros') }, h('span', { class: 'nitro-tag' }, 'N'), h('b', { 'data-testid': 'nitro-total' }, String(progress.nitro)))),
+    h('div', { class: 'stats-bar' },
+      h('button', { class: 'btn primary', 'data-testid': 'garage-btn', onclick: () => openGarage() },
+        h('span', { class: 'ic', html: IC.wrench }), t('garage')),
+      // Sin fin: una pista por piezas nueva en cada ronda, fuera del campeonato; los rivales
+      // suben más rápido que el taller. La explicación larga sale como aviso al arrancar.
+      h('button', { class: 'btn random', 'data-testid': 'random-btn', title: t('randomHelp'), onclick: () => startRandom() },
+        h('span', { class: 'ic', html: IC.dice }),
+        h('span', { class: 'card-txt' }, h('b', {}, t('randomTrack') + ' · ' + t('round', { n: progress.endless.round + 1 })),
+          progress.endless.best ? h('span', { class: 'muted', 'data-testid': 'endless-best' }, t('bestRound', { n: progress.endless.best })) : null))),
   );
-  // Sin fin: una pista por piezas nueva en cada ronda, fuera del campeonato; los rivales suben
-  // más rápido que el taller.
-  const random = h('button', { class: 'card random', 'data-testid': 'random-btn', onclick: () => startRandom() },
-    h('span', { class: 'ic', html: IC.dice }),
-    h('span', { class: 'card-txt' }, h('b', {}, t('randomTrack') + ' · ' + t('round', { n: progress.endless.round + 1 })),
-      h('span', { class: 'muted' }, t('randomHelp')),
-      progress.endless.best ? h('span', { class: 'muted', 'data-testid': 'endless-best' }, t('bestRound', { n: progress.endless.best })) : null));
-  clear(screen).append(bar, random, renderMapGraph());
+  clear(screen).append(bar, renderMapGraph());
 
   // El mapa sube: enfocar la próxima carrera.
   requestAnimationFrame(() => {
     const el = screen.querySelector('.node-wrap.next') || screen.querySelector('.node-wrap');
-    if (el) el.scrollIntoView({ block: 'center', behavior: 'auto' });
+    if (el) el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
   });
 }
 
+// En pantallas anchas el mapa va APAISADO: las regiones de izquierda a derecha, a todo el
+// ancho; en el teléfono, de abajo arriba.
+const isWide = () => window.innerWidth >= 900 && window.innerWidth > window.innerHeight;
+let mapWide = null;
+window.addEventListener('resize', () => { if (view === 'map' && mapWide !== null && mapWide !== isWide()) renderMap(); });
+
 function renderMapGraph () {
   const rows = maxRow();
-  const height = PAD_Y * 2 + (rows - 1) * ROW_H;
+  const wide = mapWide = isWide();
   const nextId = nextNodeId(progress);
-  const cx = n => n.x * MAP_W;
-  const cy = n => PAD_Y + (rows - 1 - n.row) * ROW_H;   // la primera carrera queda abajo
   const nodes = allNodes();
+  // Apaisado: el paso entre filas se estira para llenar el ancho de la ventana.
+  const step = wide ? Math.max(86, Math.min(140, (window.innerWidth - 56 - PAD_Y * 2) / (rows - 1))) : ROW_H;
+  const width = wide ? PAD_Y * 2 + (rows - 1) * step : MAP_W;
+  const height = wide ? Math.max(400, Math.min(560, window.innerHeight - 330)) : PAD_Y * 2 + (rows - 1) * step;
+  // Posición de cada carrera: la primera queda abajo (o a la izquierda).
+  const cx = n => wide ? PAD_Y + n.row * step : n.x * MAP_W;
+  const cy = n => wide ? 40 + (1 - n.x) * (height - 110) + 30 : PAD_Y + (rows - 1 - n.row) * step;
+  const along = n => wide ? cx(n) : cy(n);
 
   // Terreno: una franja por región; el borde entre dos queda a medio camino entre el jefe de
-  // una y la entrada de la siguiente.
+  // una y la entrada de la siguiente. Apaisado las franjas van de izquierda a derecha.
   const bands = [];
-  for (let ri = regions().length - 1; ri >= 0; ri--) {
-    const entry = nodes.find(n => n.region === ri), prevBoss = nodes.findLast(n => n.region === ri - 1);
-    const y1 = prevBoss ? (cy(entry) + cy(prevBoss)) / 2 : height;
-    bands.push({ key: regionKey(ri), y1: y1 / SCALE });
+  const order = wide ? [...regions().keys()] : [...regions().keys()].reverse();
+  for (const ri of order) {
+    const entry = nodes.find(n => n.region === ri), nextEntry = nodes.find(n => n.region === ri + 1);
+    const boss = nodes.findLast(n => n.region === ri), prevBoss = nodes.findLast(n => n.region === ri - 1);
+    let end;
+    if (wide) end = nextEntry ? (along(boss) + along(nextEntry)) / 2 : width;
+    else end = prevBoss ? (along(entry) + along(prevBoss)) / 2 : height;
+    bands.push({ key: regionKey(ri), end: end / SCALE });
   }
   const trails = edges().map(([a, b]) => {
     const na = nodeById(a), nb = nodeById(b);
@@ -174,10 +192,10 @@ function renderMapGraph () {
     return { x1: cx(na) / SCALE, y1: cy(na) / SCALE, x2: cx(nb) / SCALE, y2: cy(nb) / SCALE, on };
   });
   const pads = nodes.map(n => ({ x: cx(n) / SCALE, y: cy(n) / SCALE, r: (n.type === 'boss' ? T_BOSS : T_NORM) / 2 / SCALE + 2 }));
-  const ground = paintMap({ w: Math.round(MAP_W / SCALE), h: Math.round(height / SCALE), bands, trails, pads });
+  const ground = paintMap({ w: Math.round(width / SCALE), h: Math.round(height / SCALE), bands, axis: wide ? 'x' : 'y', trails, pads });
   ground.className = 'map-ground';
-  ground.style.width = MAP_W + 'px'; ground.style.height = height + 'px';
-  const inner = h('div', { class: 'map-inner', style: { width: MAP_W + 'px', height: height + 'px' } }, ground);
+  ground.style.width = width + 'px'; ground.style.height = height + 'px';
+  const inner = h('div', { class: 'map-inner', style: { width: width + 'px', height: height + 'px' } }, ground);
 
   for (const n of nodes) {
     const unlocked = isUnlocked(progress, n.id);
@@ -205,7 +223,7 @@ function renderMapGraph () {
     }
     const wrap = h('div', { class: cls.join(' '), style: { left: cx(n) - 45 + 'px', top: cy(n) - size / 2 + 'px' } }, tile);
     // La camioneta del jugador, parada en la próxima carrera.
-    if (n.id === nextId) wrap.prepend(h('span', { class: 'node-truck' }, truckIcon(sprites, 'red', 1, 24)));
+    if (n.id === nextId) wrap.prepend(h('span', { class: 'node-truck' }, truckIcon(sprites, 'red', 1, wide ? 0 : 24)));
     if (done) wrap.append(starRow(nodeStars(progress, n.id), 'node-stars'));
     else if (!unlocked) {
       const miss = starsMissing(progress, n.id);
@@ -213,13 +231,16 @@ function renderMapGraph () {
     }
     inner.appendChild(wrap);
   }
-  // El letrero de cada región, a un lado, donde empieza su terreno (el desierto, abajo del todo).
+  // El letrero de cada región, donde empieza su terreno: abajo a la izquierda de su franja
+  // (apaisado) o a la izquierda de su borde de arriba (el desierto, abajo del todo).
+  let from = 0;
   for (const b of bands) {
-    const ri = regions().findIndex(r => r.key === b.key);
-    const top = ri === 0 ? height - 30 : b.y1 * SCALE - 12;
-    inner.appendChild(h('div', { class: 'region-tag', style: { top: top + 'px' } }, t(b.key)));
+    const style = wide ? { left: from * SCALE + 8 + 'px', bottom: '8px' }
+      : { top: (b.key === 'desert' ? height - 30 : b.end * SCALE - 12) + 'px', left: '8px' };
+    inner.appendChild(h('div', { class: 'region-tag', style }, t(b.key)));
+    from = b.end;
   }
-  return h('div', { class: 'map-scroll', 'data-testid': 'map' }, inner);
+  return h('div', { class: 'map-scroll' + (wide ? ' wide' : ''), 'data-testid': 'map' }, inner);
 }
 
 // =====================================================================
@@ -228,6 +249,7 @@ function renderMapGraph () {
 /** Una ronda del sin fin en la pista de esa semilla (o en una nueva), en la ronda dada o en la tuya. */
 function startRandom (seed, round) {
   const s = seed || (1 + Math.floor(Math.random() * 0x7ffffffe));
+  if (!startRandom.told) { startRandom.told = true; showToast(t('randomHelp'), 6000); }
   startNode(null, { node: randomNode(s, progress.up, round ?? progress.endless.round) });
 }
 
@@ -381,50 +403,64 @@ function openGarage () {
   layer = nav.open(() => { layer = null; if (view === 'garage') renderMap(); });
 }
 
+// Iconos de la tienda, en píxeles (como la «Speed Shop» del original).
+const SHOP = {
+  tires: { rows: ['..kkkkk..', '.kkkkkkk.', 'kkkKKKkkk', 'kkKwwwKkk', 'kkKwKwKkk', 'kkKwwwKkk', 'kkkKKKkkk', '.kkkkkkk.', '..kkkkk..'], colors: { k: '#1e1e22', K: '#44444a', w: '#c0c0c8' } },
+  shocks: { rows: ['...yy...', '..yyyy..', '.s....s.', '..ssss..', '.s....s.', '..ssss..', '.s....s.', '..ssss..', '...bb...', '..bbbb..'], colors: { y: '#e0c040', s: '#d0d0d8', b: '#303040' } },
+  accel: { rows: ['.p.p.p.p.', 'rrrrrrrrr', 'rRRRRRRRr', 'rRkkkkkRr', 'rRRRRRRRr', 'rrrrrrrrr', '.kk...kk.', '.kk...kk.'], colors: { p: '#c0c0c8', r: '#b02020', R: '#e04040', k: '#202020' } },
+  speed: { rows: ['..wwwww..', '.wwwwwww.', 'wwkkkkkww', 'wwk.k.kww', 'wwkk.kkww', 'wwk.n.kww', 'wwkkkkkww', '.wwrrrww.', '..wwwww..'], colors: { w: '#d8d8e0', k: '#202028', n: '#ffe070', r: '#e02020' } },
+  nitro: { rows: ['...ww...', '..wwww..', '..ssss..', '.ssssss.', '.sNNNNs.', '.sNNNNs.', '.ssssss.', '.ssssss.', '..ssss..'], colors: { w: '#e8e8e8', s: '#b8c0c8', N: '#d8362c' } },
+};
+const kfmt = (n) => n >= 1000 ? Math.round(n / 1000) + 'K' : String(n);
+
 function renderGarage () {
   view = 'garage';
   document.body.classList.remove('mode-race');
   const money = progress.money;
-  // Un botón que no aplica se ve deshabilitado y dice por qué; no se esconde.
-  const buyBtn = (key, price, can, reason, onBuy) => h('button', {
-    class: 'btn primary buy', 'data-testid': 'buy-' + key, disabled: !can, title: can ? null : reason, onclick: onBuy,
-  }, can || !reason ? t('buy') + ' · ' + fmtMoney(price) : reason);
-
-  const rows = UPGRADES.map(key => {
-    const lvl = progress.up[key];
-    const price = upgradePrice(lvl);
-    // Sin tope: cada nivel cuesta más y suma lo mismo. Se enseñan hasta 8 marcas y el número.
+  // Una casilla por mejora: cabecera con el nombre y el precio, el icono y la barra de nivel.
+  // Toda la casilla es el botón de comprar; si no alcanza, se ve deshabilitada y dice cuánto falta.
+  const tile = (key, price, lvlEl, can, reason, onBuy) => h('div', { class: 'shop-tile' + (can ? '' : ' off'), 'data-testid': 'up-' + key },
+    h('button', { class: 'shop-buy', 'data-testid': 'buy-' + key, disabled: !can, title: t(key + 'Help') + (can ? '' : ' · ' + reason), 'aria-label': t('buy') + ' ' + t(key === 'nitro' ? 'nitroItem' : key) + ' · ' + fmtMoney(price), onclick: onBuy },
+      h('div', { class: 'shop-head' }, h('span', {}, t(key === 'nitro' ? 'nitroItem' : key)), h('span', { class: 'shop-price' }, kfmt(price))),
+      h('div', { class: 'shop-body' }, pixelArt(SHOP[key].rows, SHOP[key].colors, 4), lvlEl),
+      h('div', { class: 'shop-foot' }, can ? t(key + 'Help') : reason),
+    ));
+  const bar = (lvl) => {
+    const b = h('div', { class: 'lvl-bar', 'aria-label': t('level', { n: lvl }) });
+    for (let k = Math.max(8, lvl) - 1; k >= 0; k--) b.append(h('i', { class: k < lvl ? 'on' : '' }));
+    return h('div', { class: 'lvl-wrap' }, b, h('span', { class: 'lvl' }, String(lvl)));
+  };
+  const tiles = UPGRADES.map(key => {
+    const lvl = progress.up[key], price = upgradePrice(lvl);
     const can = money >= price;
-    const reason = money < price ? t('notEnough', { n: fmtMoney(price - money) }) : '';
-    const pips = h('div', { class: 'pips', 'aria-label': t('level', { n: lvl }) });
-    for (let k = 0; k < Math.max(8, lvl); k++) pips.append(h('i', { class: k < lvl ? 'on' : '' }));
-    pips.append(h('span', { class: 'lvl' }, t('level', { n: lvl })));
-    return h('div', { class: 'up-row', 'data-testid': 'up-' + key },
-      h('div', { class: 'up-txt' }, h('b', {}, t(key)), h('span', { class: 'muted' }, t(key + 'Help')), pips),
-      buyBtn(key, price, can, reason, () => {
-        progress.money -= price; progress.up[key] = lvl + 1;
-        persist(); audio.unlock(); audio.beep(660, 0.1); renderGarage();
-      }),
-    );
+    return tile(key, price, bar(lvl), can, can ? '' : t('notEnough', { n: fmtMoney(price - money) }), () => {
+      progress.money -= price; progress.up[key] = lvl + 1;
+      persist(); audio.unlock(); audio.beep(660, 0.1); renderGarage();
+    });
   });
   const canNitro = money >= NITRO_PRICE;
-  rows.push(h('div', { class: 'up-row', 'data-testid': 'up-nitro' },
-    h('div', { class: 'up-txt' }, h('b', {}, t('nitroItem')), h('span', { class: 'muted' }, t('nitroHelp')),
-      h('span', { class: 'have' }, t('youHave', { n: progress.nitro }))),
-    buyBtn('nitro', NITRO_PRICE, canNitro, canNitro ? '' : t('notEnough', { n: fmtMoney(NITRO_PRICE - money) }), () => {
+  tiles.push(tile('nitro', NITRO_PRICE, h('div', { class: 'lvl-wrap' }, h('span', { class: 'lvl big', 'data-testid': 'garage-nitro' }, String(progress.nitro))),
+    canNitro, canNitro ? '' : t('notEnough', { n: fmtMoney(NITRO_PRICE - money) }), () => {
       progress.money -= NITRO_PRICE; progress.nitro += 1;
       persist(); audio.unlock(); audio.beep(520, 0.1); renderGarage();
-    }),
-  ));
+    }));
+  // «Siguiente carrera»: la miniatura de la próxima pista, como en el original. Vuelve al mapa.
+  const next = nodeById(nextNodeId(progress));
+  tiles.push(h('div', { class: 'shop-tile go', 'data-testid': 'up-next' },
+    h('button', { class: 'shop-buy', 'data-testid': 'garage-close', onclick: () => closeLayer() },
+      h('div', { class: 'shop-head' }, h('span', {}, t('backToMap'))),
+      h('div', { class: 'shop-body' }, next ? trackThumb(thumbFor(next), regionKey(next.region), 26) : h('span', { class: 'ic', html: IC.crown })),
+      h('div', { class: 'shop-foot' }, next ? (next.type === 'boss' ? t('boss') : t('race') + ' ' + next.label) + ' · ' + t(regionKey(next.region)) : ''),
+    )));
 
   clear(screen).append(
     h('div', { class: 'garage', 'data-testid': 'garage' },
-      h('div', { class: 'garage-head' },
-        truckIcon(sprites, 'red', 5, 3),
-        h('div', {}, h('h2', {}, t('garageTitle')), h('div', { class: 'garage-money', 'data-testid': 'garage-money' }, fmtMoney(money))),
-      ),
-      ...rows,
-      h('button', { class: 'btn block', 'data-testid': 'garage-close', onclick: () => closeLayer() }, t('backToMap')),
+      h('div', { class: 'garage-head' }, truckIcon(sprites, 'red', 3, 3), h('h2', {}, t('garageTitle'))),
+      h('div', { class: 'shop' },
+        h('div', { class: 'shop-cash' },
+          h('div', { class: 'cash-box' }, h('span', {}, t('money')), h('b', { 'data-testid': 'garage-money' }, fmtMoney(money))),
+          h('div', { class: 'cash-box' }, h('span', {}, t('nitros')), h('b', {}, String(progress.nitro)))),
+        h('div', { class: 'shop-grid' }, ...tiles)),
     ));
 }
 

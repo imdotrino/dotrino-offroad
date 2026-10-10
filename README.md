@@ -27,6 +27,13 @@ propios. PWA instalable, **funciona sin conexión**.
   trazado (`trackOutline`, solo el eje: no cuesta nada), como la casilla «start next race» de
   la tienda del original; el jefe lleva marco ajedrezado y la camioneta del jugador se para en
   la próxima carrera. Los paneles y botones de toda la app llevan el mismo bisel (`--bevel`).
+  En pantallas anchas (≥ 900 px y apaisadas) el mapa va **de izquierda a derecha** a todo el
+  ancho de la ventana; en el teléfono, de abajo arriba.
+- **Taller** como la «Speed Shop» del original: panel rojo biselado con las cajas negras de
+  dinero y nitros, y una casilla por mejora (cabecera negra con nombre y precio en K, icono de
+  píxeles, barra de nivel vertical verde). Toda la casilla es el botón de comprar; si no
+  alcanza, se ve deshabilitada y dice cuánto falta. La casilla «Volver al mapa» lleva la
+  miniatura de la próxima carrera.
 - **Sin fin**: una pista nueva en cada ronda. Los rivales salen un 15 % por delante del
   taller del jugador y cada ronda suman 0,45 niveles, sin techo (`ENDLESS_LEAD`,
   `ENDLESS_STEP` en `levels.js`); el taller tampoco tiene tope, pero cada nivel cuesta más
