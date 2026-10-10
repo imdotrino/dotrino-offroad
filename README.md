@@ -79,7 +79,12 @@ calcula siguiendo el rayo hacia la luz, así que el corte de la sombra es la sil
 y sigue la forma del hueco. Se cruzan rodando, sin despegar.
 
 Las camionetas son un campo de alturas con las aristas biseladas, iluminado por su normal
-(`truckModel`), girado en 32 ángulos. Además se inclinan con la normal del piso (cabeceo a lo
+(`truckModel`), girado en 32 ángulos. **Pisan con las cuatro ruedas**, no con un punto
+(`groundAt` en `sim.js`: ejes a ±7 px, ruedas a ±5): la carrocería descansa sobre la rueda que
+más alto pisa, así que una montaña o una roca al costado la levanta y la ladea en vez de
+atravesarla; el despegue se decide por lo que hay bajo el centro, que es lo que se acaba de
+golpe en la cresta de una rampa. Un desnivel de un piso bajo una rueda (un muro entre
+módulos) no cuenta como suelo que se pise. Además se inclinan con la normal del piso (cabeceo a lo
 largo del eje y balanceo entre las ruedas, con la suavidad de una suspensión) y en el aire
 levantan el morro al subir y lo bajan al caer; los cuadros inclinados se dibujan la primera vez
 que hacen falta (`renderTruck`) y se guardan en caché a pasos de ~5°.

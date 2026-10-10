@@ -2,7 +2,7 @@
 // por la máquina) tienen que completar las vueltas sin atascarse, y la carrera tiene que ser
 // determinista. Es lo que comprueba que un trazado nuevo se puede correr.
 import assert from 'node:assert/strict';
-import { buildTrack, distAt, generateLayout, LAYOUTS, W, H } from '../src/track.js';
+import { buildTrack, distAt, heightAt, generateLayout, LAYOUTS, W, H } from '../src/track.js';
 import { createRace, step } from '../src/sim.js';
 import { allNodes, rivalsFor, isUnlocked, totalStars, starsForPlace, prizeFor, randomNode } from '../src/levels.js';
 
@@ -257,11 +257,44 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
   };
   const t = mk(3, 0), pt = t.pits.find(p => p.type !== 'trench') || t.pits[0];
   const r = drive(t, { x: pt.x - pt.rx - 14, y: pt.y }, 0, 1);
-  assert.ok(r.minG < -4, `the truck never went down into the pit (${r.minG.toFixed(1)})`);
+  // La carrocería descansa sobre sus cuatro ruedas, así que no baja hasta el fondo: las ruedas
+  // de delante y de atrás (a ±7) van más arriba que el centro.
+  assert.ok(r.minG < -2, `the truck never went down into the pit (${r.minG.toFixed(1)})`);
   assert.equal(r.air, 0, `the truck left the ground ${r.air} frames crossing a pit: it must roll through`);
   const t2 = mk(0, 1), rp = t2.ramps[0], s0 = t2.samples[(rp - 14 + t2.n) % t2.n];
   const r2 = drive(t2, { x: s0.x, y: s0.y }, Math.atan2(s0.ty, s0.tx), 1.5);
   assert.ok(r2.air > 20, `a ramp should launch the truck (airborne ${r2.air} frames)`);
+}
+
+// 2f. La camioneta pisa con las cuatro ruedas, no con un punto: al pasar al costado de una
+//     montaña (el centro fuera del cono, las ruedas de un lado encima) sube y se ladea, en vez
+//     de atravesarla. Y la carrocería nunca queda por debajo de lo que pisa cada rueda.
+{
+  const t = buildTrack({ layout: 6, seed: 5, mounds: 1, rocks: 0, pits: 0, bumps: 0, whoops: 0, hills: 0, ramps: 0, puddles: 0, maxLevel: 0 });
+  const m = t.mounds[0], q = t.samples[m.i], dir = Math.atan2(q.ty, q.tx);
+  // Carril a 10 px del centro de la montaña (radio 11): el centro apenas la toca.
+  const lat = m.lat + 10 * Math.sign(m.lat || 1) * -1;
+  const from = { x: q.x - q.ty * lat - q.tx * 40, y: q.y + q.tx * lat - q.ty * 40 };
+  const up = { tires: 0, shocks: 0, accel: 0, speed: 0 };
+  const race = createRace({ track: t, trucks: [{ ai: false, up }], laps: 9, seed: 1 });
+  race.state = 'racing';
+  const a = race.trucks[0];
+  a.x = from.x; a.y = from.y; a.a = dir; a.vx = Math.cos(dir) * 50; a.vy = Math.sin(dir) * 50;
+  let maxG = 0, maxRoll = 0, centerMax = 0, sunk = 0;
+  for (let i = 0; i < 90; i++) {
+    step(race, 1 / 60, { steer: 0, gas: false, brake: false, nitro: false }); race.over = false;
+    maxG = Math.max(maxG, a.g); maxRoll = Math.max(maxRoll, Math.abs(a.roll));
+    centerMax = Math.max(centerMax, heightAt(t, a.x, a.y));
+    const fx = Math.cos(a.a), fy = Math.sin(a.a);
+    for (const [dl, dw] of [[7, 5], [7, -5], [-7, 5], [-7, -5]]) {
+      const h = heightAt(t, a.x + fx * dl - fy * dw, a.y + fy * dl + fx * dw);
+      if (!a.air && h - a.alt > 0.01) sunk = Math.max(sunk, h - a.alt);
+    }
+  }
+  assert.ok(centerMax < 2, `the lane should pass beside the mound, not over it (center height ${centerMax.toFixed(1)})`);
+  assert.ok(maxG > centerMax + 2, `the body should ride up on the mound under its wheels (body ${maxG.toFixed(1)}, center ${centerMax.toFixed(1)})`);
+  assert.ok(maxRoll > 0.15, `the truck should lean passing beside a mound (roll ${maxRoll.toFixed(2)})`);
+  assert.equal(sunk, 0, `a wheel sank ${sunk.toFixed(2)} into the ground`);
 }
 
 // 3. Determinista: misma semilla, mismo resultado.

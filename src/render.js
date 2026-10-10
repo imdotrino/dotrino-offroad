@@ -526,7 +526,8 @@ export function drawRace (ctx, bg, race, sprites, fx, t) {
   const tmp = sctx.createImageData(SP, SP);
   for (const tr of order) {
     const fr = sprites.tilted(tr.color, frameOf(tr), tr.pitch || 0, tr.roll || 0);
-    const x0 = left(tr), y0 = Math.round(screenY(tr.y, ground(tr.x, tr.y) + tr.z)) - AY;
+    // `alt` es la altura de la carrocería (descansa sobre sus cuatro ruedas, no sobre el centro).
+    const x0 = left(tr), y0 = Math.round(screenY(tr.y, tr.alt ?? ground(tr.x, tr.y) + tr.z)) - AY;
     tmp.data.set(fr.pixels);
     for (let py = 0; py < SP; py++) {
       const sy = y0 + py;

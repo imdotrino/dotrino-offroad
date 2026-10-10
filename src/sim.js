@@ -27,6 +27,34 @@ export function statsFor (up) {
 
 const wrapAngle = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 
+// Dónde pisan las ruedas respecto al centro (el dibujo mide 23×12 px: ejes a ±7 a lo largo,
+// ruedas a ±5 a lo ancho). Un desnivel mayor que WHEEL_MAX bajo una rueda no es terreno que
+// se pise (es un muro entre pisos, de 15 o 30): esa rueda cuenta como si pisara donde el centro.
+const WHEEL_L = 7, WHEEL_W = 5, WHEEL_MAX = 10;
+/**
+ * El suelo bajo una camioneta: lo que pisan sus cuatro ruedas, no un punto. Devuelve la altura
+ * del centro (el promedio de las ruedas) y la inclinación del plano que forman, así una
+ * montaña o una roca al costado la levantan y la ladean en vez de atravesarla.
+ */
+export function groundAt (track, x, y, a) {
+  const fx = Math.cos(a), fy = Math.sin(a);
+  const c = heightAt(track, x, y);
+  const w = (dl, dw) => {
+    const h = heightAt(track, x + fx * dl - fy * dw, y + fy * dl + fx * dw);
+    return Math.abs(h - c) > WHEEL_MAX ? c : h;
+  };
+  const fl = w(WHEEL_L, WHEEL_W), fr = w(WHEEL_L, -WHEEL_W), rl = w(-WHEEL_L, WHEEL_W), rr = w(-WHEEL_L, -WHEEL_W);
+  return {
+    // La carrocería descansa sobre la rueda que más alto pisa (una rueda no se hunde en una
+    // montaña), y nunca más abajo que lo que hay bajo el centro: en la cresta de una rampa
+    // (ruedas delanteras ya en el aire) sigue arriba hasta despegar.
+    h: Math.max(c, fl, fr, rl, rr),
+    c,
+    pitch: Math.atan((fl + fr - rl - rr) / 2 / (2 * WHEEL_L)),
+    roll: Math.atan((fl + rl - fr - rr) / 2 / (2 * WHEEL_W)),
+  };
+}
+
 /**
  * @param {object} o
  * @param {object} o.track  pista de buildTrack()
@@ -50,7 +78,7 @@ export function createRace ({ track, trucks, laps, seed, grip = 1 }) {
       x: s.x - s.ty * side, y: s.y + s.tx * side,
       a: Math.atan2(s.ty, s.tx), vx: 0, vy: 0,
       // Altura: `g` suelo bajo la camioneta, `alt` la suya, `z` lo que vuela por encima.
-      g: 0, alt: 0, z: 0, vz: 0, rate: 0, climb: 0, air: false, airT: 0, airMax: 0,
+      g: 0, gc: 0, alt: 0, z: 0, vz: 0, rate: 0, climb: 0, air: false, airT: 0, airMax: 0,
       pitch: 0, roll: 0, pitchV: 0, rollV: 0,
       idx: i, lap: -1, progress: i - n,
       nitro: t.nitro ?? 0, nitroT: 0, nitroHeld: false,
@@ -59,7 +87,7 @@ export function createRace ({ track, trucks, laps, seed, grip = 1 }) {
       lapStart: 0, bestLap: 0,
     };
   });
-  for (const tr of list) tr.g = tr.alt = heightAt(track, tr.x, tr.y);
+  for (const tr of list) { const gr = groundAt(track, tr.x, tr.y, tr.a); tr.g = tr.alt = gr.h; tr.gc = gr.c; }
   return {
     track, laps, grip, rand, trucks: list, t: 0, state: 'countdown', countdown: 3.2,
     finishedCount: 0, pickup: null, pickupT: 4 + rand() * 3, events: [], over: false,
@@ -178,7 +206,7 @@ function stepTruck (race, tr, input, dt) {
   // ahí (lo que es muro sube más de 52° respecto a lo avanzado; un desnivel de 45° no llega);
   // se rebota como contra la valla de fuera. En el aire sí se puede caer encima del piso alto.
   const moved = Math.hypot(tr.x - px, tr.y - py);
-  if (!tr.air && Math.abs(heightAt(track, tr.x, tr.y) - tr.g) > 1.3 * moved + 0.6) {
+  if (!tr.air && Math.abs(groundAt(track, tr.x, tr.y, tr.a).h - tr.g) > 1.3 * moved + 0.6) {
     let gx = heightAt(track, px + 1, py) - heightAt(track, px - 1, py);
     let gy = heightAt(track, px, py + 1) - heightAt(track, px, py - 1);
     if (tr.g > heightAt(track, tr.x, tr.y)) { gx = -gx; gy = -gy; }      // desde arriba, el muro está hacia abajo
@@ -227,16 +255,18 @@ function stepTruck (race, tr, input, dt) {
 
   // Altura. En el suelo la camioneta lo sigue; despega cuando el suelo se le acaba de golpe
   // bajo las ruedas (el borde de una rampa, la cresta de una loma) y venía subiendo.
-  const g = heightAt(track, tr.x, tr.y);
+  // `g` es donde descansa la carrocería (las cuatro ruedas); el despegue se decide por lo que
+  // hay bajo el centro (`gc`), que es lo que se acaba de golpe en una cresta.
+  const ground = groundAt(track, tr.x, tr.y, tr.a), g = ground.h, gc = ground.c;
   if (!tr.air) {
-    const rate = (g - tr.g) / dt;
+    const rate = (gc - tr.gc) / dt;
     // Despega solo si el suelo se le va de debajo más rápido de lo que caería (una cresta tras
     // una subida, o la bajada de un nivel), Y hay de dónde saltar: una subida de 7 o más
     // (rampa, montaña) o un piso en alto. Un hueco (6 de hondo, desde el suelo) no da para
     // volar: se entra y se sale rodando, pegada al suelo.
-    if (rate > 0) tr.climb += g - tr.g; else if (rate < -1) tr.climb = 0;
-    const falls = tr.g + tr.rate * dt - 0.5 * GRAVITY * dt * dt - g > 0.12;
-    if (falls && speed > 20 && (tr.climb >= 7 || tr.g >= 10)) {
+    if (rate > 0) tr.climb += gc - tr.gc; else if (rate < -1) tr.climb = 0;
+    const falls = tr.gc + tr.rate * dt - 0.5 * GRAVITY * dt * dt - gc > 0.12;
+    if (falls && speed > 20 && (tr.climb >= 7 || tr.gc >= 10)) {
       tr.air = true; tr.airT = 0; tr.climb = 0;
       tr.alt = tr.g; tr.vz = Math.min(VZ_MAX, tr.rate > 0 ? tr.rate * LAUNCH : tr.rate);
       race.events.push({ type: 'jump', k: tr.k });
@@ -257,7 +287,7 @@ function stepTruck (race, tr, input, dt) {
       }
     }
   }
-  tr.g = g; tr.z = tr.alt - g;
+  tr.g = g; tr.gc = gc; tr.z = tr.alt - g;
 
   // Inclinación: en el suelo la camioneta se acomoda a la normal del piso (cabeceo a lo largo
   // del eje, balanceo entre las ruedas); en el aire levanta el morro al subir y lo baja al
@@ -267,9 +297,7 @@ function stepTruck (race, tr, input, dt) {
   // frenar lo hunde, y al aterrizar rebota (menos, y más corto, con mejores amortiguadores).
   let pitchT, rollT;
   if (!tr.air) {
-    const L = 5, Wd = 3;
-    pitchT = Math.atan((heightAt(track, tr.x + fx * L, tr.y + fy * L) - heightAt(track, tr.x - fx * L, tr.y - fy * L)) / (2 * L));
-    rollT = Math.atan((heightAt(track, tr.x - fy * Wd, tr.y + fx * Wd) - heightAt(track, tr.x + fy * Wd, tr.y - fx * Wd)) / (2 * Wd));
+    pitchT = ground.pitch; rollT = ground.roll;
     rollT += input.steer * Math.min(speed, 90) * 0.0028 * Math.max(0.5, 1.3 - 0.12 * st.tires);
     if (!tr.finished) {
       if (input.gas && speed < st.top * 0.9) pitchT += 0.05 * (1 + 0.1 * st.accel / 12);
@@ -386,7 +414,8 @@ export function step (race, dt, input) {
       if (tr.stuckT > 2.5) {
         const s = race.track.samples[tr.idx];
         tr.x = s.x; tr.y = s.y; tr.a = Math.atan2(s.ty, s.tx); tr.vx = tr.vy = 0; tr.stuckT = 0;
-        tr.g = tr.alt = heightAt(race.track, s.x, s.y); tr.rate = 0; tr.air = false; tr.z = 0;
+        const gr = groundAt(race.track, s.x, s.y, tr.a);
+        tr.g = tr.alt = gr.h; tr.gc = gr.c; tr.rate = 0; tr.air = false; tr.z = 0;
       }
     }
   }
