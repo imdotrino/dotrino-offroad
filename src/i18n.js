@@ -28,6 +28,7 @@ const DICT = {
     helpTouch: 'Desliza el volante a los lados · pedal GAS · N nitro',
     rotateHint: 'gira el teléfono para verla más grande',
     zoom: 'Zoom', zoomHelp: 'Zoom: la vista sigue a tu camioneta',
+    shortcut: 'Sin atajos: de vuelta a la pista',
 
     // Resultado
     youFinished: 'Llegaste {p}', bossBeaten: '¡Jefe vencido!',
@@ -77,6 +78,7 @@ const DICT = {
     helpTouch: 'Slide the wheel sideways · GAS pedal · N nitro',
     rotateHint: 'turn your phone for a bigger view',
     zoom: 'Zoom', zoomHelp: 'Zoom: the view follows your truck',
+    shortcut: 'No shortcuts: back on track',
 
     youFinished: 'You finished {p}', bossBeaten: 'Boss beaten!',
     failed: 'You finished 4th: you need the podium to move on',

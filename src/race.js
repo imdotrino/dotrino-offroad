@@ -4,7 +4,7 @@ import { h } from './dom.js';
 import { t } from './i18n.js';
 import { buildTrack } from './track.js';
 import { createRace, step, livePlace } from './sim.js';
-import { paintTrack, drawRace, emitParticles, stepParticles, PALETTES, SW as W, SH as H, screenX, screenY } from './render.js';
+import { paintTrack, drawRace, emitParticles, stepParticles, pixelArt, PALETTES, SW as W, SH as H, screenX, screenY } from './render.js';
 import * as audio from './audio.js';
 
 const DT = 1 / 60;
@@ -54,7 +54,8 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
   // elija después manda.
   let zoom = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
   try { const v = localStorage.getItem(LS_ZOOM); if (v === '1' || v === '0') zoom = v === '1'; } catch { /* modo privado */ }
-  const zoomBtn = h('button', { class: 'hud-btn zoom', 'data-testid': 'zoom-btn', 'aria-pressed': String(zoom), 'aria-label': t('zoom'), title: t('zoomHelp'), onclick: () => setZoom(!zoom) }, 'ZOOM');
+  const zoomBtn = h('button', { class: 'hud-btn zoom', 'data-testid': 'zoom-btn', 'aria-pressed': String(zoom), 'aria-label': t('zoom'), title: t('zoomHelp'), onclick: () => setZoom(!zoom) },
+    pixelArt(['.www.', 'w...w', 'w...w', '.www.', '....kk', '.....k'].map(r => r.padEnd(6, '.')), { w: '#f0e8d8', k: '#f0e8d8' }, 3));
   function setZoom (on) {
     zoom = on;
     zoomBtn.setAttribute('aria-pressed', String(on));
@@ -220,6 +221,12 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
     if (p) audio.engineSet(0, false);
     last = 0;
   }
+  let noteT = null;
+  /** Un aviso corto sobre la pista (se va solo). */
+  function flashNote (msg) {
+    note.textContent = msg; note.classList.remove('gone');
+    clearTimeout(noteT); noteT = setTimeout(() => note.classList.add('gone'), 1800);
+  }
   function sounds () {
     for (const ev of race.events) {
       const mine = ev.k === 0;
@@ -238,6 +245,7 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
       }
       else if (ev.type === 'pickup' && mine) { audio.beep(660, 0.08); setTimeout(() => audio.beep(990, 0.12), 80); }
       else if (ev.type === 'lap' && mine) audio.beep(520, 0.1, 'triangle');
+      else if (ev.type === 'shortcut' && mine) { audio.beep(200, 0.25, 'square', 0.08); flashNote(t('shortcut')); }
     }
     race.events.length = 0;
   }

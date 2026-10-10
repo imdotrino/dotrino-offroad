@@ -39,7 +39,18 @@ propios. PWA instalable, **funciona sin conexión**.
   en vivo). Las ventanas (resultado, pausa) llevan marco grueso y barra de título oscura. **La
   única excepción es `<dotrino-topbar>`**, que va con el tema del ecosistema «Cool & Cozy»
   oscuro (Quicksand, `#181c1e`, acento `#81cfff`).
-- **Zoom** (botón ZOOM en el HUD de la carrera; en táctil viene encendido): la vista sigue a tu camioneta ampliada ×2,2,
+- **Atajar no es posible** (tres cerrojos, 0.22.0). (1) `fenceSeams` en `track.js`: la pista
+  es casi tan ancha (76 px) como una casilla del trazado (≈93 px), así que dos tramos vecinos
+  al mismo piso se fundían en una explanada; donde dos píxeles vecinos de dentro «pertenecen» a
+  muestras lejanas del eje (> 20) y el punto queda lejos de los dos ejes (en un cruce de verdad
+  queda cerca de ambos) se levanta una franja de 12 px de «fuera» con sus dos vallas. (2) La
+  valla que corona un muro entre pisos para también a una camioneta en el aire, salvo que
+  vuele 8 px por encima: tirarse del piso alto al bajo era el atajo. (3) En `sim.js`, si la
+  camioneta aparece lejos de la ventana de muestras (−12..+10) y la más cercana de toda la
+  pista queda más de 10 muestras por delante, vuelve a donde iba («Sin atajos: de vuelta a la
+  pista»); si queda por detrás, se sincroniza y sigue. Antes el avance se quedaba clavado y la
+  vuelta no contaba hasta pasar por el punto perdido: cortar camino costaba una vuelta.
+- **Zoom** (botón de lupa en el HUD de la carrera; en táctil viene encendido): la vista sigue a tu camioneta ampliada ×2,2,
   con la cámara con un poco de retraso y sin salirse de la pista. El lienzo no cambia (sigue
   siendo `SW×SH`): se escala y desplaza con `transform` dentro del marco, que con zoom aprovecha
   todo el alto libre. Preferencia de UI en `localStorage` (`offroad.zoom`). En el teléfono la

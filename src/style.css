@@ -189,7 +189,9 @@ body.mode-race dotrino-topbar { display: none; }
   margin-left: 6px; min-width: 34px; height: 30px; padding: 0 6px; border-radius: var(--radius); border: 2px solid var(--ink);
   background: var(--surface); color: var(--text); font-family: var(--font-px); font-size: .5rem; box-shadow: var(--bevel);
 }
-.hud-btn.zoom[aria-pressed="true"] { background: var(--accent); color: #1d1206; }
+.hud-btn { flex: none; white-space: nowrap; display: inline-grid; place-items: center; }
+.hud-btn.zoom[aria-pressed="true"] { background: var(--accent); }
+.hud-btn.zoom[aria-pressed="true"] .px-art { filter: brightness(.2); }
 .race-wrap { position: relative; margin: auto; flex: none; overflow: hidden; }
 .race-stage.portrait .race-wrap { margin: 6vh auto auto; }
 .race-stage.portrait .race-big { top: 16%; }

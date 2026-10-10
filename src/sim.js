@@ -93,7 +93,7 @@ export function createRace ({ track, trucks, laps, seed, grip = 1 }) {
       idx: i, lap: -1, progress: i - n,
       nitro: t.nitro ?? 0, nitroT: 0, nitroHeld: false,
       mud: false, finished: false, finishT: 0, place: 0,
-      cash: 0, lane: side * 0.6, laneT: 0, stuckT: 0, bestProgress: i - n,
+      cash: 0, lane: side * 0.6, laneT: 0, stuckT: 0, offT: 0, bestProgress: i - n,
       lapStart: 0, bestLap: 0,
     };
   });
@@ -213,7 +213,11 @@ function stepTruck (race, tr, input, dt) {
   // velocidad: se mira si el paso cruza la franja del muro, no cuánto cambió la altura); se
   // rebota como contra la valla de fuera. En el aire sí se puede caer encima del piso alto.
   tr.walled = false;
-  if (!tr.air && crossesLedge(track, px, py, tr.x, tr.y)) {
+  // La valla que corona el muro (FENCE_H) también para a una camioneta EN EL AIRE que la roce:
+  // tirarse del piso alto al bajo era el atajo. Solo pasa por encima quien vuela más alto.
+  const FENCE_H = 8;
+  const overFence = tr.air && tr.alt > Math.max(tr.gc, heightAt(track, tr.x, tr.y)) + FENCE_H;
+  if (!overFence && crossesLedge(track, px, py, tr.x, tr.y)) {
     let gx = heightAt(track, px + 1, py) - heightAt(track, px - 1, py);
     let gy = heightAt(track, px, py + 1) - heightAt(track, px, py - 1);
     if (tr.gc > heightAt(track, tr.x, tr.y)) { gx = -gx; gy = -gy; }     // desde arriba, el muro está hacia abajo (por el suelo bajo el CENTRO: la carrocería puede ir más alta)
@@ -332,7 +336,7 @@ function stepTruck (race, tr, input, dt) {
   // Avance por el eje: la muestra más cercana dentro de una ventana (así un cruce no confunde).
   const prev = tr.idx;
   let best = 1e9, bi = prev;
-  for (let o = -3; o <= 10; o++) {
+  for (let o = -12; o <= 10; o++) {
     const i = (prev + o + n) % n;
     const q = s[i];
     const dd = (q.x - tr.x) * (q.x - tr.x) + (q.y - tr.y) * (q.y - tr.y);
@@ -350,6 +354,35 @@ function stepTruck (race, tr, input, dt) {
       tr.lapStart = race.t;
     } else if (bi > prev && bi - prev > n / 2) tr.lap--;   // la cruzó hacia atrás
   }
+  // Lejos de toda la ventana: se salió del eje (voló una valla, tomó el otro ramal de un cruce).
+  // ATAJAR NO ES POSIBLE: si la muestra más cercana de toda la pista queda bastante por delante,
+  // la camioneta vuelve a donde iba. Si queda por detrás (dio la vuelta, o el otro ramal lleva
+  // atrás), se sincroniza y sigue desde ahí. Antes el avance se quedaba clavado y la vuelta
+  // no contaba hasta pasar otra vez por el punto perdido: cortar camino costaba una vuelta.
+  if (best >= (track.half * 1.7) ** 2) {
+    tr.offT += dt;
+    if (tr.offT > 0.4) {
+      let gb = 1e9, gi = prev;
+      for (let i = 0; i < n; i++) {
+        const q = s[i], dd = (q.x - tr.x) * (q.x - tr.x) + (q.y - tr.y) * (q.y - tr.y);
+        if (dd < gb) { gb = dd; gi = i; }
+      }
+      if (gb < (track.half * 1.7) ** 2) {
+        const ahead = (gi - prev + n) % n;
+        if (ahead > 10 && ahead < n / 2) {
+          const q = s[prev];
+          tr.x = q.x; tr.y = q.y; tr.a = Math.atan2(q.ty, q.tx); tr.vx = tr.vy = 0;
+          const gr = groundAt(track, q.x, q.y, tr.a);
+          tr.g = tr.alt = gr.h; tr.gc = gr.c; tr.rate = 0; tr.air = false; tr.z = 0;
+          race.events.push({ type: 'shortcut', k: tr.k });
+        } else if (ahead >= n / 2) {
+          if (gi > prev && gi - prev > n / 2) tr.lap--;   // volvió a cruzar la meta hacia atrás
+          tr.idx = gi;
+        }
+        tr.offT = 0;
+      }
+    }
+  } else tr.offT = 0;
   tr.progress = tr.lap * n + tr.idx;
 
   if (!tr.finished && tr.lap >= race.laps) {

@@ -386,6 +386,51 @@ function smoothCorners (field) {
  * Construye una pista.
  * @param {{layout?:number, size?:number, cross?:number, chicane?:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, whoops?:number, mounds?:number, rocks?:number, pits?:number, maxLevel?:number}} spec
  */
+/**
+ * VALLA ENTRE TRAMOS PEGADOS. La pista es tan ancha (2·HALF = 76 px) como casi una casilla del
+ * trazado (≈93 px), así que dos tramos vecinos se funden en una sola explanada y se podía
+ * cortar camino de uno al otro (y el avance se perdía). Donde dos píxeles vecinos de dentro
+ * de la pista «pertenecen» a muestras lejanas del eje (más de SEAM_GAP muestras) y los dos
+ * tramos no se pisan (no es un cruce), hay una costura:
+ * se levanta una valla encima, haciendo que `field` sea «fuera» en una franja fina. A partir
+ * de ahí la física y la pintura la tratan como cualquier valla. Un cruce se distingue porque
+ * ahí los dos tramos se pisan de verdad (el punto queda cerca de los dos ejes).
+ */
+const SEAM_GAP = 20;
+function fenceSeams (field, near, s, ledge) {
+  const n = s.length;
+  const mask = new Uint8Array(W * H);
+  let any = 0;
+  const loopDist = (a, b) => { const d = Math.abs(a - b) % n; return Math.min(d, n - d); };
+  for (let y = 0; y < H - 1; y++) {
+    for (let x = 0; x < W - 1; x++) {
+      const k = y * W + x;
+      if (field[k] >= HALF - 1) continue;
+      for (const j of [k + 1, k + W]) {
+        if (field[j] >= HALF - 1 || ledge[k] || ledge[j]) continue;
+        const a = Math.floor(near[k]) % n, b = Math.floor(near[j]) % n;
+        if (loopDist(a, b) <= SEAM_GAP) continue;
+        // En un CRUCE los dos tramos se pisan de verdad: el punto queda cerca de los dos ejes.
+        // En una costura (un hueco que la limadura de esquinas rellenó) queda lejos de ambos.
+        const qa = s[a], qb = s[b], xj = j % W, yj = (j - xj) / W;
+        if (Math.hypot(qa.x - x, qa.y - y) < HALF - 10 || Math.hypot(qb.x - xj, qb.y - yj) < HALF - 10) continue;
+        mask[k] = mask[j] = 1; any++;
+      }
+    }
+  }
+  if (!any) return mask;
+  const dist = distanceTo(mask);
+  // La valla es fina: solo lo que la física necesita para que el centro de una camioneta no
+  // pase (TRUCK_R más un margen), sin estrechar el resto del tramo.
+  // Una franja de 12 px de «fuera» (dos vallas espalda con espalda, con su tierra en medio),
+  // como la que queda entre dos tramos vecinos de un trazado normal.
+  for (let k = 0; k < W * H; k++) {
+    if (dist[k] > 22) continue;
+    field[k] = Math.max(field[k], HALF + 6 - dist[k]);
+  }
+  return mask;
+}
+
 /** Solo el eje de la pista (para la miniatura del mapa): sin campo ni alturas, cuesta nada. */
 export function trackOutline (spec) {
   const layout = spec.layout != null
@@ -646,6 +691,8 @@ export function buildTrack (spec) {
     }
     ledge[k] = high ? 2 : low ? 1 : 0;
   }
+  // Valla entre tramos pegados al mismo piso (entre pisos distintos ya hay muro, y se queda).
+  const seam = fenceSeams(field, near, samples, ledge);
   // Un montículo pegado a un muro entre piezas es un trampolín por encima de la valla hacia
   // el tramo vecino (y la máquina se pierde allí): fuera los que caen a menos de 40 px de uno (radio 11 más lo que vuela).
   for (let m = mounds.length - 1; m >= 0; m--) {
@@ -811,7 +858,7 @@ export function buildTrack (spec) {
     rocks.push(r);
   }
 
-  return { spec, name: layout.name, samples, n, field, near, height, ledge, bumps, ramps, hills, puddles, whoops, mounds, rocks, pits, levels, level, drops, corners, half: HALF,
+  return { spec, name: layout.name, samples, n, field, near, seam, height, ledge, bumps, ramps, hills, puddles, whoops, mounds, rocks, pits, levels, level, drops, corners, half: HALF,
     crossed: !!(/** @type {any} */ (layout.pts)).crossed, chicanes: (/** @type {any} */ (layout.pts)).chicanes || 0 };
 }
 

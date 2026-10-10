@@ -118,8 +118,8 @@ test('en un teléfono: pista a lo ancho, pedales debajo y volante analógico', a
   await open(page)
   await page.getByTestId('node-n0').tap()
   await expect(page.getByTestId('pad-gas')).toBeVisible()
-  const box = await page.getByTestId('race-canvas').boundingBox()
-  expect(box.width).toBeGreaterThan(box.height)
+  // El MARCO de la pista (con zoom el lienzo va ampliado dentro) ocupa todo el ancho.
+  const box = await page.locator('.race-wrap').boundingBox()
   expect(box.width).toBeGreaterThan(380)
   const pad = await page.getByTestId('pad-gas').boundingBox()
   expect(pad.y).toBeGreaterThan(box.y + box.height)

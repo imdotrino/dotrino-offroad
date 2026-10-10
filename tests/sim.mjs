@@ -23,6 +23,13 @@ function run (node, playerLevel) {
   return { race, track, steps, resets };
 }
 
+/** Al colocar una camioneta a mano, su avance apunta a la muestra más cercana (si no, la
+ *  simulación cree que atajó y la devuelve a donde «iba»). */
+function placeIdx (track, a) {
+  let b = 1e9;
+  for (let i = 0; i < track.n; i++) { const q = track.samples[i], d = (q.x - a.x) ** 2 + (q.y - a.y) ** 2; if (d < b) { b = d; a.idx = i; } }
+}
+
 // 1. Cada trazado deja una pista con la salida dentro y obstáculos sobre el eje.
 for (let i = 0; i < LAYOUTS.length; i++) {
   for (const reversed of [false, true]) {
@@ -109,7 +116,7 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
   const race = createRace({ track, trucks: [{ ai: false, up }, { ai: false, up }], laps: 3, seed: 1 });
   race.state = 'racing';
   const [a, b] = race.trucks, s0 = track.samples[track.n - 12];
-  a.x = s0.x - 20; a.y = s0.y; a.vx = 60; a.vy = 0; a.a = 0;
+  a.x = s0.x - 20; a.y = s0.y; a.vx = 60; a.vy = 0; a.a = 0; placeIdx(track, a);
   b.x = s0.x + 20; b.y = s0.y; b.vx = -60; b.vy = 0; b.a = Math.PI;
   for (const t of [a, b]) { t.g = t.alt = 0; t.rate = 0; }
   let closest = 99, crashed = false, bounced = false;
@@ -132,7 +139,7 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
   const race = createRace({ track, trucks: [{ ai: false, up }], laps: 3, seed: 1 });
   race.state = 'racing';
   const [a] = race.trucks, r = track.rocks[0];
-  a.x = r.x - 26; a.y = r.y; a.vx = 70; a.vy = 0; a.a = 0;
+  a.x = r.x - 26; a.y = r.y; a.vx = 70; a.vy = 0; a.a = 0; placeIdx(track, a);
   let closest = 99;
   for (let i = 0; i < 30; i++) {
     step(race, 1 / 60, { steer: 0, gas: true, brake: false, nitro: false });
@@ -172,6 +179,11 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
     let worst = 0;
     for (let y = 8; y < H - 8; y += 2) for (let x = 8; x < W - 8; x += 2) {
       if (Math.abs(distAt(t, x, y) - t.half) > 1) continue;
+      // La valla entre tramos pegados (fenceSeams) es una franja fina puesta después del
+      // limado: sus extremos y sus esquinas con la valla de fuera no se liman. Se salta.
+      let nearSeam = false;
+      for (let sy = Math.max(0, y - 14); sy <= Math.min(H - 1, y + 14) && !nearSeam; sy++) for (let sx = Math.max(0, x - 14); sx <= Math.min(W - 1, x + 14); sx++) if (t.seam[sy * W + sx]) { nearSeam = true; break; }
+      if (nearSeam) continue;
       const [nx, ny] = gradAt(x, y);
       // el siguiente punto del borde, 6 px más allá siguiendo la valla
       const qx = x - ny * 6, qy = y + nx * 6;
@@ -250,7 +262,7 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
     const race = createRace({ track, trucks: [{ ai: false, up }], laps: 9, seed: 1 });
     race.state = 'racing';
     const a = race.trucks[0];
-    a.x = from.x; a.y = from.y; a.a = dir; a.vx = Math.cos(dir) * 70; a.vy = Math.sin(dir) * 70; a.g = a.alt = 0;
+    a.x = from.x; a.y = from.y; a.a = dir; a.vx = Math.cos(dir) * 70; a.vy = Math.sin(dir) * 70; a.g = a.alt = 0; placeIdx(track, a);
     let air = 0, minG = 0;
     for (let i = 0; i < secs * 60; i++) { step(race, 1 / 60, { steer: 0, gas: true, brake: false, nitro: false }); race.over = false; if (a.air) air++; minG = Math.min(minG, a.g); }
     return { air, minG };
@@ -297,7 +309,7 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
       const race = createRace({ track: t, trucks: [{ ai: false, up: { tires: 0, shocks: 0, accel: 0, speed: 0 } }], laps: 9, seed: 1 });
       race.state = 'racing';
       const a = race.trucks[0];
-      a.x = sx; a.y = sy; a.a = dir; a.vx = Math.cos(dir) * v; a.vy = Math.sin(dir) * v;
+      a.x = sx; a.y = sy; a.a = dir; a.vx = Math.cos(dir) * v; a.vy = Math.sin(dir) * v; placeIdx(t, a);
       const gr = groundAt(t, a.x, a.y, a.a); a.g = a.alt = gr.h; a.gc = gr.c;
       const h0 = heightAt(t, sx, sy);
       let crossed = false;
@@ -325,7 +337,7 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
   const race = createRace({ track: t, trucks: [{ ai: false, up }], laps: 9, seed: 1 });
   race.state = 'racing';
   const a = race.trucks[0];
-  a.x = from.x; a.y = from.y; a.a = dir; a.vx = Math.cos(dir) * 50; a.vy = Math.sin(dir) * 50;
+  a.x = from.x; a.y = from.y; a.a = dir; a.vx = Math.cos(dir) * 50; a.vy = Math.sin(dir) * 50; placeIdx(t, a);
   let maxG = 0, maxRoll = 0, centerMax = 0, sunk = 0;
   for (let i = 0; i < 90; i++) {
     step(race, 1 / 60, { steer: 0, gas: false, brake: false, nitro: false }); race.over = false;
@@ -344,6 +356,41 @@ assert.ok(worst < 26, `a lap takes too long (${worst.toFixed(1)}s)`);
   assert.ok(maxG > centerMax + 0.5, `the body should ride up on the mound under its wheels (body ${maxG.toFixed(1)}, center ${centerMax.toFixed(1)})`);
   assert.ok(maxRoll > 0.15, `the truck should lean passing beside a mound (roll ${maxRoll.toFixed(2)})`);
   assert.equal(sunk, 0, `a wheel sank ${sunk.toFixed(2)} into the ground`);
+}
+
+// 2g. ATAJAR NO ES POSIBLE: una camioneta que aparece bastante por delante en la pista (voló una
+//     valla, tomó el otro ramal de un cruce) vuelve a donde iba, y la vuelta no se pierde. Si
+//     aparece por detrás, se sincroniza y sigue desde ahí.
+{
+  const node = allNodes()[0];
+  const track = buildTrack(node.race);
+  const DT = 1 / 60, n = track.n;
+  const mk = () => {
+    const race = createRace({ track, trucks: [{ ai: true, color: 'red', up: { tires: 1, shocks: 1, accel: 1, speed: 1 }, skill: 0.95, nitro: 0 }], laps: 3, seed: 1, grip: 1 });
+    for (let k = 0; k < 60 * 6; k++) { race.over = false; step(race, DT, null); }
+    return race;
+  };
+  const fwd = mk(), me = fwd.trucks[0];
+  const idx0 = me.idx, lap0 = me.lap;
+  assert.ok(idx0 > 20, `the truck should have advanced (idx ${idx0})`);
+  const q = track.samples[(idx0 + 40) % n];
+  me.x = q.x; me.y = q.y;
+  let shortcut = 0;
+  for (let k = 0; k < 60; k++) { fwd.over = false; step(fwd, DT, null); shortcut += fwd.events.filter(e => e.type === 'shortcut').length; fwd.events.length = 0; }
+  assert.equal(shortcut, 1, 'jumping 40 samples ahead must be undone once');
+  assert.ok(me.idx < idx0 + 12 && me.idx >= idx0 - 12, `after the shortcut the truck is back where it was (idx ${me.idx}, was ${idx0})`);
+  assert.equal(me.lap, lap0, 'no lap is lost by a shortcut');
+  // Y en una vuelta entera, ninguna máquina dispara el aviso sin motivo.
+  const { race } = run(node, 1);
+  assert.equal(race.events.filter(e => e.type === 'shortcut').length, 0);
+  assert.ok(race.trucks.every(t => t.finished), 'all trucks finish');
+  const back = mk(), me2 = back.trucks[0];
+  const i2 = me2.idx, l2 = me2.lap, b = track.samples[(i2 - 40 + n) % n];
+  me2.x = b.x; me2.y = b.y; me2.vx = me2.vy = 0;
+  for (let k = 0; k < 60; k++) { back.over = false; step(back, DT, null); }
+  assert.ok(back.events.every(e => e.type !== 'shortcut'), 'appearing behind is not a shortcut');
+  assert.ok(Math.abs(me2.idx - (i2 - 40)) < 14, `the truck re-syncs behind (idx ${me2.idx}, expected ≈ ${i2 - 40})`);
+  assert.equal(me2.lap, l2);
 }
 
 // 3. Determinista: misma semilla, mismo resultado.
