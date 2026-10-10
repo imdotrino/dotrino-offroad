@@ -1,7 +1,7 @@
 // Service worker estándar del ecosistema (§3): navegación network-first (los
 // deploys se ven al instante; offline cae a caché), resto cache-first con refresco
 // en segundo plano. Subir N de CACHE en cada cambio de assets cacheados.
-const CACHE = 'offroad-v26';
+const CACHE = 'offroad-v27';
 const ASSETS = [
   './',
   './index.html',
@@ -9,7 +9,11 @@ const ASSETS = [
   './icon.svg',
   './icon-192.png',
   './icon-512.png',
-  './icon-maskable-512.png'
+  './icon-maskable-512.png',
+  './fonts/press-start-2p.woff2',
+  './fonts/pixelify-sans.woff2',
+  './fonts/quicksand.woff2',
+  './fonts/quicksand-ext.woff2'
 ];
 
 self.addEventListener('install', e => {

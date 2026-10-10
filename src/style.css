@@ -1,3 +1,16 @@
+/* Fuentes empaquetadas (nada de Google Fonts en vivo): las dos de píxeles para el juego y
+   Quicksand para la barra del ecosistema (tema Cool & Cozy). Todas OFL. */
+@font-face { font-family: 'Press Start 2P'; src: url('/fonts/press-start-2p.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Pixelify Sans'; src: url('/fonts/pixelify-sans.woff2') format('woff2'); font-weight: 400 700; font-display: swap; }
+@font-face {
+  font-family: 'Quicksand'; src: url('/fonts/quicksand.woff2') format('woff2'); font-weight: 300 700; font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Quicksand'; src: url('/fonts/quicksand-ext.woff2') format('woff2'); font-weight: 300 700; font-display: swap;
+  unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
   --bg1: #16110d;
   --bg2: #2a1d12;
@@ -11,6 +24,9 @@
   --gold: #fbbf24;
   --ok: #34d399;
   --ink: #0d0a08;
+  /* Letras de máquina recreativa (títulos, números, botones) y de píxeles legible (texto). */
+  --font-px: 'Press Start 2P', 'Courier New', monospace;
+  --font-body: 'Pixelify Sans', 'Segoe UI', system-ui, sans-serif;
   --radius: 3px;
   /* Bisel de los paneles del original: luz arriba-izquierda, sombra abajo-derecha. */
   --bevel: inset 2px 2px 0 rgba(255,255,255,.16), inset -2px -2px 0 rgba(0,0,0,.42);
@@ -20,7 +36,7 @@
 html, body { height: 100%; }
 body {
   margin: 0;
-  font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-body); font-size: 17px;
   color: var(--text); background: var(--bg1);
   -webkit-user-select: none; user-select: none; overscroll-behavior: none;
 }
@@ -37,20 +53,21 @@ button { font-family: inherit; cursor: pointer; }
 
 /* ---------- Topbar: <dotrino-topbar> (§5), vestido con la paleta de la app ---------- */
 dotrino-topbar {
-  --dotrino-topbar-bg: transparent;
-  --dotrino-topbar-border: transparent;
-  --dotrino-topbar-text: var(--text);
-  --dotrino-topbar-muted: var(--muted);
-  --dotrino-topbar-accent: var(--accent);
-  --dotrino-topbar-font: inherit;
+  font-family: 'Quicksand', system-ui, sans-serif;
+  --dotrino-topbar-bg: #181c1e;
+  --dotrino-topbar-border: #3f484e;
+  --dotrino-topbar-text: #dfe3e6;
+  --dotrino-topbar-muted: #bfc8cf;
+  --dotrino-topbar-accent: #81cfff;
+  --dotrino-topbar-font: 'Quicksand', system-ui, sans-serif;
 }
 /* En carrera la pista ocupa toda la pantalla: la barra se oculta solo en esa vista. */
 body.mode-race dotrino-topbar { display: none; }
-.cc-install { --cci-bg: var(--surface); --cci-text: var(--text); --cci-border: var(--border); }
+.cc-install { --cci-bg: #1c2022; --cci-text: #dfe3e6; --cci-border: #3f484e; font-family: 'Quicksand', system-ui, sans-serif; }
 
 .btn {
   border: 2px solid var(--ink); background: var(--surface); color: var(--text);
-  border-radius: var(--radius); padding: 10px 14px; font-size: .92rem; font-weight: 800; line-height: 1;
+  border-radius: var(--radius); padding: 12px 14px; font-family: var(--font-px); font-size: .62rem; font-weight: 400; line-height: 1.3;
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   box-shadow: var(--bevel), 0 3px 0 var(--ink);
   transition: background .15s, border-color .15s;
@@ -75,17 +92,17 @@ body.mode-race dotrino-topbar { display: none; }
 .btn.random { text-align: left; }
 .btn.random .ic svg { color: var(--accent-2); width: 22px; height: 22px; }
 .btn.random .card-txt { gap: 1px; }
-.btn.random .muted { font-size: .7rem; font-weight: 600; }
+.btn.random .muted { font-family: var(--font-body); font-size: .8rem; font-weight: 600; }
 .card-txt { display: flex; flex-direction: column; }
 .stat-chip {
   display: inline-flex; align-items: center; gap: 6px; padding: 8px 11px; border-radius: var(--radius);
   background: var(--surface); border: 2px solid var(--ink); box-shadow: var(--bevel);
-  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: .92rem;
+  font-family: var(--font-px); font-variant-numeric: tabular-nums; font-size: .66rem; line-height: 1.3;
 }
 .stat-chip .star svg { width: 16px; height: 16px; color: var(--gold); display: block; }
 .nitro-tag {
   display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px;
-  background: #d8362c; color: #ffe070; font-size: .7rem; font-weight: 900;
+  background: #d8362c; color: #ffe070; font-size: .55rem;
 }
 .map-scroll { flex: 1; display: flex; justify-content: center; padding: 10px 0 calc(env(safe-area-inset-bottom) + 34px); }
 /* Apaisado (escritorio): a todo el ancho; si no cabe, se desplaza a los lados. */
@@ -114,7 +131,7 @@ body.mode-race dotrino-topbar { display: none; }
 .node-num {
   position: absolute; left: 2px; top: 2px; min-width: 16px; height: 16px; padding: 0 3px;
   display: grid; place-items: center; background: var(--ink); color: #ffe070;
-  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace; font-size: .78rem; font-weight: 900; line-height: 1;
+  font-family: var(--font-px); font-size: .55rem; line-height: 1;
 }
 .node-crown { position: absolute; left: 50%; top: -9px; transform: translateX(-50%); filter: drop-shadow(0 2px 0 var(--ink)); }
 .reg-desert { --reg: #c89050; } .reg-forest { --reg: #4e8a46; } .reg-snow { --reg: #8aa8c8; } .reg-volcano { --reg: #a0503a; }
@@ -140,15 +157,15 @@ body.mode-race dotrino-topbar { display: none; }
 .node-stars .ns svg { width: 13px; height: 13px; }
 .ns.on { color: var(--gold); }
 .node-gate {
-  display: inline-flex; align-items: center; gap: 3px; font-size: .74rem; font-weight: 900; color: var(--gold);
-  background: var(--ink); padding: 2px 5px; font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+  display: inline-flex; align-items: center; gap: 4px; font-size: .55rem; color: var(--gold);
+  background: var(--ink); padding: 3px 5px; font-family: var(--font-px);
 }
 .node-gate .ic svg { width: 13px; height: 13px; display: block; }
 /* Letrero de la región: tabla biselada con el nombre en letras de máquina. */
 .region-tag {
   position: absolute; left: 8px;
-  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
-  font-size: .72rem; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; line-height: 1;
+  font-family: var(--font-px);
+  font-size: .55rem; text-transform: uppercase; letter-spacing: 1px; line-height: 1;
   color: #ffe070; white-space: nowrap; padding: 5px 8px 4px; background: #5a3c22;
   border: 2px solid var(--ink); box-shadow: var(--bevel), 0 3px 0 var(--ink); text-shadow: 1px 1px 0 var(--ink);
 }
@@ -161,16 +178,16 @@ body.mode-race dotrino-topbar { display: none; }
 }
 .race-hud {
   width: 100%; display: flex; align-items: center; justify-content: center; gap: 14px; padding: 6px 10px;
-  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace; font-size: .95rem;
+  font-family: var(--font-px); font-size: .7rem;
 }
 .hud-item { display: inline-flex; align-items: baseline; gap: 5px; }
-.hud-item i { font-style: normal; font-size: .68rem; text-transform: uppercase; color: var(--muted); letter-spacing: .5px; }
+.hud-item i { font-style: normal; font-size: .5rem; text-transform: uppercase; color: var(--muted); }
 .hud-item b { font-variant-numeric: tabular-nums; }
-.hud-item:first-child b { color: var(--gold); font-size: 1.15rem; }
+.hud-item:first-child b { color: var(--gold); font-size: .85rem; }
 .hud-item.nitro i { color: #ff7a5c; font-weight: 900; }
 .hud-btn {
   margin-left: 6px; min-width: 34px; height: 30px; padding: 0 6px; border-radius: var(--radius); border: 2px solid var(--ink);
-  background: var(--surface); color: var(--text); font-size: .7rem; font-weight: 900; box-shadow: var(--bevel);
+  background: var(--surface); color: var(--text); font-family: var(--font-px); font-size: .5rem; box-shadow: var(--bevel);
 }
 .hud-btn.zoom[aria-pressed="true"] { background: var(--accent); color: #1d1206; }
 .race-wrap { position: relative; margin: auto; flex: none; overflow: hidden; }
@@ -183,13 +200,13 @@ body.mode-race dotrino-topbar { display: none; }
 }
 .race-big {
   position: absolute; left: 0; right: 0; top: 34%; text-align: center; pointer-events: none;
-  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
-  font-size: clamp(2.6rem, 12vw, 5.5rem); font-weight: 900; color: #fff;
+  font-family: var(--font-px);
+  font-size: clamp(2rem, 9vw, 4.2rem); color: #ffe070;
   text-shadow: 0 4px 0 #000, 4px 0 0 #000, -4px 0 0 #000, 0 -4px 0 #000;
 }
 .race-note {
   position: absolute; left: 0; right: 0; top: 58%; text-align: center; pointer-events: none;
-  font-size: .9rem; font-weight: 700; color: #fff; text-shadow: 0 2px 0 #000, 0 0 6px #000;
+  font-size: 1rem; font-weight: 700; color: #fff; text-shadow: 2px 2px 0 #000, 0 0 6px #000;
   transition: opacity .6s; padding: 0 12px;
 }
 .race-note.gone { opacity: 0; }
@@ -211,9 +228,9 @@ body.mode-race dotrino-topbar { display: none; }
   font-weight: 900; touch-action: none;
 }
 /* Pedales: el de gas más alto y a la derecha, como en un carro. */
-.pad.pedal { width: 104px; border-radius: 12px 12px 16px 16px; font-size: .72rem; letter-spacing: .5px; }
-.pad.gas { height: 176px; font-size: 1.05rem; background: rgba(240, 138, 36, .62); }
-.pad.nitro { width: 92px; height: 92px; border-radius: 50%; background: rgba(216, 54, 44, .65); color: #ffe070; font-size: 1.9rem; align-self: flex-start; }
+.pad.pedal { width: 104px; border-radius: 12px 12px 16px 16px; font-family: var(--font-px); font-size: .6rem; }
+.pad.gas { height: 176px; font-size: .8rem; background: rgba(240, 138, 36, .62); }
+.pad.nitro { width: 92px; height: 92px; border-radius: 50%; background: rgba(216, 54, 44, .65); color: #ffe070; font-family: var(--font-px); font-size: 1.4rem; align-self: flex-start; }
 .pad.on { filter: brightness(1.5); transform: translateY(3px); }
 /* En vertical el volante se lleva casi todo el ancho: los pedales van juntos y el nitro encima. */
 .race-stage.portrait .pads-r { flex-direction: column; align-items: center; gap: 8px; }
@@ -226,17 +243,23 @@ body.mode-race dotrino-topbar { display: none; }
   background: rgba(8, 5, 3, .7); padding: 18px; overflow-y: auto;
 }
 .modal {
-  background: var(--surface); border: 2px solid var(--ink); border-radius: var(--radius);
-  padding: 22px; width: 100%; max-width: 380px; box-shadow: var(--bevel), 0 6px 0 var(--ink), 0 22px 60px rgba(0,0,0,.5);
-  animation: pop .18s ease; margin: auto;
+  background: var(--surface); border: 3px solid var(--ink); border-radius: var(--radius); outline: 2px solid #f0e8d8; outline-offset: -5px;
+  padding: 20px; width: 100%; max-width: 380px; box-shadow: var(--bevel), 0 6px 0 var(--ink);
+  animation: pop .18s steps(3, end); margin: auto;
 }
 @keyframes pop { from { transform: scale(.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-.modal h2, .garage-head h2 { margin: 0 0 6px; font-size: 1.2rem; font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace; text-transform: uppercase; letter-spacing: 1px; }
-.modal p { color: var(--muted); margin: 0 0 8px; font-size: .92rem; }
+/* El título de la ventana es una barra oscura de lado a lado, como la cabecera de una casilla. */
+.modal h2 {
+  margin: -20px -20px 14px; padding: 12px 20px; background: var(--ink); color: #ffe070;
+  font-family: var(--font-px); font-size: .7rem; font-weight: 400; line-height: 1.5; text-transform: uppercase;
+  border-bottom: 2px solid #f0e8d8;
+}
+.modal.win h2 { margin-top: 10px; margin-bottom: 10px; }
+.modal p { color: var(--muted); margin: 0 0 8px; font-size: 1rem; line-height: 1.35; }
 .modal.win { text-align: center; }
 .win-place {
-  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
-  font-size: 3.2rem; font-weight: 900; line-height: 1; color: var(--muted);
+  font-family: var(--font-px);
+  font-size: 2rem; line-height: 1; color: var(--muted); text-shadow: 3px 3px 0 var(--ink);
 }
 .win-place.place-1 { color: var(--gold); } .win-place.place-2 { color: #d5dbe3; } .win-place.place-3 { color: #d08a52; }
 .win-stars { gap: 10px; margin: 8px 0 2px; }
@@ -245,18 +268,18 @@ body.mode-race dotrino-topbar { display: none; }
 /* Con la misma fuerza que la regla de arriba ganaba el gris: las estrellas ganadas no se encendían. */
 .win-stars .ns.on { color: var(--gold); filter: drop-shadow(0 0 6px rgba(251, 191, 36, .45)); }
 .win-meta { display: flex; justify-content: center; gap: 22px; margin: 14px 0 4px; }
-.win-meta .k { font-size: .64rem; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
-.win-meta .v { font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.win-meta .k { font-family: var(--font-px); font-size: .5rem; text-transform: uppercase; color: var(--muted); }
+.win-meta .v { font-family: var(--font-px); font-size: .8rem; font-variant-numeric: tabular-nums; margin-top: 4px; }
 .win-meta .v.money { color: var(--ok); }
-.region-open { margin-top: 10px; font-weight: 800; color: var(--accent-2); }
+.region-open { margin-top: 10px; font-family: var(--font-px); font-size: .6rem; line-height: 1.5; color: var(--accent-2); }
 .win-share { margin-top: 8px; }
-.share-hint { font-size: .8rem; color: var(--muted); margin-top: 7px; }
+.share-hint { font-size: .9rem; color: var(--muted); margin-top: 7px; }
 .win-actions { margin-top: 6px; }
 
 .toast {
   position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 26px); z-index: 80;
   transform: translateX(-50%) translateY(12px); opacity: 0; pointer-events: none;
-  background: var(--ink); color: #fff; padding: 11px 16px; border: 2px solid #f0f0e8; border-radius: var(--radius); font-size: .9rem; font-weight: 600;
+  background: var(--ink); color: #fff; padding: 11px 16px; border: 2px solid #f0f0e8; border-radius: var(--radius); font-size: 1rem; font-weight: 600; box-shadow: 0 3px 0 var(--ink), 0 0 0 2px var(--ink);
   max-width: min(92vw, 420px); text-align: center; transition: opacity .2s, transform .2s;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -264,7 +287,7 @@ body.mode-race dotrino-topbar { display: none; }
 /* ---------- Taller: la «Speed Shop» del original ---------- */
 .garage { width: 100%; max-width: 560px; margin: 0 auto; padding: 4px 14px calc(env(safe-area-inset-bottom) + 26px); }
 .garage-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-.garage-head h2 { margin: 0; font-size: 1.4rem; color: var(--accent-2); text-shadow: 2px 2px 0 var(--ink); }
+.garage-head h2 { margin: 0; font-family: var(--font-px); font-size: 1rem; font-weight: 400; color: var(--accent-2); text-shadow: 3px 3px 0 var(--ink); text-transform: uppercase; }
 .truck-icon { image-rendering: pixelated; image-rendering: crisp-edges; background: var(--surface2); border-radius: var(--radius); border: 2px solid var(--ink); box-shadow: var(--bevel); }
 .shop { background: #b8402a; border: 2px solid var(--ink); border-radius: var(--radius); box-shadow: var(--bevel), 0 4px 0 var(--ink); padding: 10px; }
 .shop-cash { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
@@ -272,8 +295,8 @@ body.mode-race dotrino-topbar { display: none; }
   display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; background: var(--ink); border: 2px solid #f0e8d8;
   box-shadow: inset 2px 2px 0 rgba(0,0,0,.6);
 }
-.cash-box span { font-size: .62rem; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; color: #f0e8d8; }
-.cash-box b { font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace; font-size: 1.25rem; color: #7cf29a; font-variant-numeric: tabular-nums; }
+.cash-box span { font-family: var(--font-px); font-size: .45rem; text-transform: uppercase; color: #f0e8d8; }
+.cash-box b { font-family: var(--font-px); font-size: .9rem; color: #7cf29a; font-variant-numeric: tabular-nums; }
 .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (min-width: 900px) { .garage { max-width: 820px; } .shop-grid { grid-template-columns: repeat(3, 1fr); } }
 .shop-tile { display: flex; }
@@ -287,7 +310,7 @@ body.mode-race dotrino-topbar { display: none; }
 .shop-buy:disabled:active { transform: none; box-shadow: var(--bevel), 0 3px 0 var(--ink); }
 .shop-head {
   display: flex; justify-content: space-between; gap: 6px; padding: 5px 7px; background: var(--ink); color: #f0e8d8;
-  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace; font-size: .74rem; font-weight: 900; text-transform: uppercase; letter-spacing: .5px;
+  font-family: var(--font-px); font-size: .5rem; line-height: 1.4; text-transform: uppercase;
 }
 .shop-price { color: #ffe070; }
 .shop-body { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 10px 6px; min-height: 76px; }
@@ -295,15 +318,15 @@ body.mode-race dotrino-topbar { display: none; }
 .shop-tile.go .shop-body { justify-content: center; }
 .shop-tile.go .shop-buy { background: #4e8a46; }
 .shop-tile.go .track-thumb { width: 52px; height: 52px; background: rgba(0,0,0,.3); }
-.shop-foot { padding: 0 8px 8px; font-size: .68rem; line-height: 1.25; color: #1d1a18; font-weight: 600; min-height: 30px; }
+.shop-foot { padding: 0 8px 8px; font-size: .8rem; line-height: 1.2; color: #1d1a18; font-weight: 600; min-height: 30px; }
 .shop-tile.off .shop-foot { color: #4a1a10; font-weight: 800; }
 /* Barra de nivel vertical, verde, como la del original; sin tope: pasa de 8 y sigue. */
 .lvl-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .lvl-bar { display: flex; flex-direction: column-reverse; gap: 1px; width: 14px; padding: 2px; background: var(--ink); }
 .lvl-bar i { display: block; height: 5px; background: #3a4450; }
 .lvl-bar i.on { background: #34d060; }
-.lvl { font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace; font-size: .74rem; font-weight: 900; color: var(--ink); }
-.lvl.big { font-size: 1.6rem; color: #ffe070; text-shadow: 2px 2px 0 var(--ink); }
+.lvl { font-family: var(--font-px); font-size: .55rem; color: var(--ink); }
+.lvl.big { font-size: 1.3rem; color: #ffe070; text-shadow: 3px 3px 0 var(--ink); }
 
 /* En horizontal los mandos caen sobre la pista: se quedan igual de grandes para el dedo, pero
    casi transparentes para no taparla. */

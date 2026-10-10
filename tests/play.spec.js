@@ -143,14 +143,15 @@ test('en un teléfono: pista a lo ancho, pedales debajo y volante analógico', a
   expect(half).toBeGreaterThan(0.3); expect(half).toBeLessThan(0.7)
   expect(await steerAt(w.width * 0.45)).toBe(1)
   expect(await steerAt(-w.width * 0.45)).toBe(-1)
-  // Zoom: el lienzo no cambia de tamaño, pero se amplía y sigue a la camioneta dentro del marco.
-  await page.getByTestId('zoom-btn').tap()
-  await page.waitForTimeout(150)
+  // Zoom: en táctil viene encendido. El lienzo no cambia de tamaño, pero se amplía y sigue a la
+  // camioneta dentro del marco; al apagarlo vuelve la pista entera.
   const tf = await page.getByTestId('race-canvas').evaluate(el => el.style.transform)
   expect(tf).toContain('scale(2.2)')
+  await expect(page.getByTestId('zoom-btn')).toHaveAttribute('aria-pressed', 'true')
   const wrapBox = await page.locator('.race-wrap').boundingBox()
   expect(Math.round(wrapBox.width)).toBe(Math.round(box.width))
   await page.getByTestId('zoom-btn').tap()
+  await page.waitForTimeout(100)
   expect(await page.getByTestId('race-canvas').evaluate(el => el.style.transform)).toBe('')
   await page.getByTestId('wheel').dispatchEvent('pointerup', { pointerId: 1, clientX: cx, clientY: cy })
   await page.waitForTimeout(80)

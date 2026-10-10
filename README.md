@@ -34,7 +34,12 @@ propios. PWA instalable, **funciona sin conexión**.
   píxeles, barra de nivel vertical verde). Toda la casilla es el botón de comprar; si no
   alcanza, se ve deshabilitada y dice cuánto falta. La casilla «Volver al mapa» lleva la
   miniatura de la próxima carrera.
-- **Zoom** (botón ZOOM en el HUD de la carrera): la vista sigue a tu camioneta ampliada ×2,2,
+- **Letras y ventanas de píxeles**: `Press Start 2P` (títulos, números, botones, HUD) y
+  `Pixelify Sans` (texto), empaquetadas en `public/fonts/` (OFL; nada se trae de Google Fonts
+  en vivo). Las ventanas (resultado, pausa) llevan marco grueso y barra de título oscura. **La
+  única excepción es `<dotrino-topbar>`**, que va con el tema del ecosistema «Cool & Cozy»
+  oscuro (Quicksand, `#181c1e`, acento `#81cfff`).
+- **Zoom** (botón ZOOM en el HUD de la carrera; en táctil viene encendido): la vista sigue a tu camioneta ampliada ×2,2,
   con la cámara con un poco de retraso y sin salirse de la pista. El lienzo no cambia (sigue
   siendo `SW×SH`): se escala y desplaza con `transform` dentro del marco, que con zoom aprovecha
   todo el alto libre. Preferencia de UI en `localStorage` (`offroad.zoom`). En el teléfono la

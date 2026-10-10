@@ -50,8 +50,10 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
   // dentro del marco). Es una preferencia de UI → localStorage. En el teléfono la pista entera
   // queda muy pequeña.
   const LS_ZOOM = 'offroad.zoom';
-  let zoom = false;
-  try { zoom = localStorage.getItem(LS_ZOOM) === '1'; } catch { /* modo privado */ }
+  // En táctil (teléfono) viene ENCENDIDO: la pista entera queda muy pequeña. Lo que el jugador
+  // elija después manda.
+  let zoom = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  try { const v = localStorage.getItem(LS_ZOOM); if (v === '1' || v === '0') zoom = v === '1'; } catch { /* modo privado */ }
   const zoomBtn = h('button', { class: 'hud-btn zoom', 'data-testid': 'zoom-btn', 'aria-pressed': String(zoom), 'aria-label': t('zoom'), title: t('zoomHelp'), onclick: () => setZoom(!zoom) }, 'ZOOM');
   function setZoom (on) {
     zoom = on;
