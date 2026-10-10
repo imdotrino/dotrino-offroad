@@ -386,6 +386,19 @@ function smoothCorners (field) {
  * Construye una pista.
  * @param {{layout?:number, size?:number, cross?:number, chicane?:number, reversed?:boolean, seed:number, bumps?:number, puddles?:number, hills?:number, ramps?:number, whoops?:number, mounds?:number, rocks?:number, pits?:number, maxLevel?:number}} spec
  */
+/** Solo el eje de la pista (para la miniatura del mapa): sin campo ni alturas, cuesta nada. */
+export function trackOutline (spec) {
+  const layout = spec.layout != null
+    ? LAYOUTS[spec.layout % LAYOUTS.length]
+    : { name: 'gen', pts: generateLayout(spec.seed, spec.size, { cross: spec.cross, chicane: spec.chicane }) };
+  let pts = layout.pts.map(p => [FX + p[0] * FW, FY + p[1] * FH]);
+  if (spec.reversed) pts = [pts[1], pts[0]].concat(pts.slice(2).reverse());
+  const samples = sampleLoop(pts);
+  const M = HALF + 5;
+  for (const q of samples) { q.x = Math.max(M, Math.min(W - M, q.x)); q.y = Math.max(M, Math.min(H - M, q.y)); }
+  return samples;
+}
+
 export function buildTrack (spec) {
   // Con `layout`, uno de los trazados dibujados a mano; sin él, una pista por piezas de su semilla.
   const layout = spec.layout != null

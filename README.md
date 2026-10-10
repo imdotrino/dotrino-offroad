@@ -20,7 +20,13 @@ propios. PWA instalable, **funciona sin conexión**.
   dinero de los premios.
 - **Mapa de 24 carreras** (CONVENCIONES §12): cuatro regiones (desierto, bosque, nieve,
   volcán) con caminos que se bifurcan y un jefe al final de cada una. Las estrellas (3 por
-  ganar, 2 por el segundo puesto, 1 por el tercero) abren jefes y regiones.
+  ganar, 2 por el segundo puesto, 1 por el tercero) abren jefes y regiones. El mapa se dibuja
+  con el mismo pixel art que la carrera (`paintMap` en `render.js`): una franja de terreno por
+  región con sus adornos, caminos de tierra entre carreras (con rodadas en los ya recorridos),
+  un marco de valla a rayas, y cada carrera es una casilla biselada con la miniatura de su
+  trazado (`trackOutline`, solo el eje: no cuesta nada), como la casilla «start next race» de
+  la tienda del original; el jefe lleva marco ajedrezado y la camioneta del jugador se para en
+  la próxima carrera. Los paneles y botones de toda la app llevan el mismo bisel (`--bevel`).
 - **Sin fin**: una pista nueva en cada ronda. Los rivales salen un 15 % por delante del
   taller del jugador y cada ronda suman 0,45 niveles, sin techo (`ENDLESS_LEAD`,
   `ENDLESS_STEP` en `levels.js`); el taller tampoco tiene tope, pero cada nivel cuesta más

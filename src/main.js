@@ -3,12 +3,13 @@ import { h, clear } from './dom.js';
 import { t, getLang, setLang, fmtMoney } from './i18n.js';
 import { loadProgress, saveProgress, onStoreProblem, storeHandle } from './store.js';
 import {
-  allNodes, nodeById, edges, maxRow, regionKey, totalStars, maxStars, nodeStars, isDone,
+  allNodes, nodeById, edges, maxRow, regionKey, regions, totalStars, maxStars, nodeStars, isDone,
   isUnlocked, starsMissing, nextNodeId, followingNodeId, starsForPlace, prizeFor,
   cashPickupValue, rivalsFor, randomNode, randomPrize, UPGRADES, NITRO_PRICE, START, upgradePrice,
 } from './levels.js';
 import { startRace } from './race.js';
-import { makeSprites, truckIcon } from './render.js';
+import { makeSprites, truckIcon, paintMap, pixelArt, trackThumb } from './render.js';
+import { trackOutline } from './track.js';
 import * as audio from './audio.js';
 import { getIdentity } from './services/identity.js';
 import { getReputation } from './services/reputation.js';
@@ -111,7 +112,16 @@ const starRow = (n, cls) => {
 // =====================================================================
 //  Mapa
 // =====================================================================
-const MAP_W = 320, ROW_H = 100, PAD_Y = 52, R_NORM = 27, R_BOSS = 33;
+// El mapa se dibuja como la carrera: terreno de píxeles por región (desierto abajo, bosque,
+// nieve y volcán hacia arriba), caminos de tierra entre carreras y una casilla biselada con la
+// miniatura del trazado por carrera, como la «start next race» del original.
+const MAP_W = 324, ROW_H = 102, PAD_Y = 60, SCALE = 3, T_NORM = 58, T_BOSS = 70;
+const PX = {
+  lock: { rows: ['.kkk.', 'k...k', 'k...k', 'ggggg', 'gyyyg', 'gyyyg', 'ggggg'], colors: { k: '#1d1206', g: '#8a6a40', y: '#1d1206' } },
+  crown: { rows: ['y...y...y', 'yy.yyy.yy', 'yyyyyyyyy', 'yyyyyyyyy', '.yyyyyyy.'], colors: { y: '#fbbf24' } },
+};
+const thumbs = {};
+const thumbFor = (n) => (thumbs[n.id] ||= trackOutline(n.race));
 
 function renderMap () {
   view = 'map';
@@ -146,28 +156,34 @@ function renderMapGraph () {
   const rows = maxRow();
   const height = PAD_Y * 2 + (rows - 1) * ROW_H;
   const nextId = nextNodeId(progress);
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('class', 'map-edges');
-  svg.setAttribute('width', String(MAP_W)); svg.setAttribute('height', String(height));
   const cx = n => n.x * MAP_W;
   const cy = n => PAD_Y + (rows - 1 - n.row) * ROW_H;   // la primera carrera queda abajo
-  for (const [a, b] of edges()) {
-    const na = nodeById(a), nb = nodeById(b);
-    const line = document.createElementNS(ns, 'line');
-    line.setAttribute('x1', String(cx(na))); line.setAttribute('y1', String(cy(na)));
-    line.setAttribute('x2', String(cx(nb))); line.setAttribute('y2', String(cy(nb)));
-    const travelled = isDone(progress, a) && (isDone(progress, b) || isUnlocked(progress, b));
-    line.setAttribute('class', 'edge' + (travelled ? ' on' : ''));
-    svg.appendChild(line);
-  }
-  const inner = h('div', { class: 'map-inner', style: { width: MAP_W + 'px', height: height + 'px' } }, svg);
+  const nodes = allNodes();
 
-  for (const n of allNodes()) {
+  // Terreno: una franja por región; el borde entre dos queda a medio camino entre el jefe de
+  // una y la entrada de la siguiente.
+  const bands = [];
+  for (let ri = regions().length - 1; ri >= 0; ri--) {
+    const entry = nodes.find(n => n.region === ri), prevBoss = nodes.findLast(n => n.region === ri - 1);
+    const y1 = prevBoss ? (cy(entry) + cy(prevBoss)) / 2 : height;
+    bands.push({ key: regionKey(ri), y1: y1 / SCALE });
+  }
+  const trails = edges().map(([a, b]) => {
+    const na = nodeById(a), nb = nodeById(b);
+    const on = isDone(progress, a) && (isDone(progress, b) || isUnlocked(progress, b));
+    return { x1: cx(na) / SCALE, y1: cy(na) / SCALE, x2: cx(nb) / SCALE, y2: cy(nb) / SCALE, on };
+  });
+  const pads = nodes.map(n => ({ x: cx(n) / SCALE, y: cy(n) / SCALE, r: (n.type === 'boss' ? T_BOSS : T_NORM) / 2 / SCALE + 2 }));
+  const ground = paintMap({ w: Math.round(MAP_W / SCALE), h: Math.round(height / SCALE), bands, trails, pads });
+  ground.className = 'map-ground';
+  ground.style.width = MAP_W + 'px'; ground.style.height = height + 'px';
+  const inner = h('div', { class: 'map-inner', style: { width: MAP_W + 'px', height: height + 'px' } }, ground);
+
+  for (const n of nodes) {
     const unlocked = isUnlocked(progress, n.id);
     const done = isDone(progress, n.id);
     const isBoss = n.type === 'boss';
-    const r = isBoss ? R_BOSS : R_NORM;
+    const size = isBoss ? T_BOSS : T_NORM;
     const cls = ['node-wrap', 'reg-' + regionKey(n.region)];
     if (isBoss) cls.push('boss');
     if (done) cls.push('done');
@@ -175,28 +191,33 @@ function renderMapGraph () {
     if (n.id === nextId) cls.push('next');
 
     // Bloqueada no es deshabilitada: al tocarla dice qué falta.
-    const circle = h('button', {
+    const tile = h('button', {
       class: 'node', 'data-testid': 'node-' + n.id, 'data-node': n.id,
-      style: { width: r * 2 + 'px', height: r * 2 + 'px' },
+      style: { width: size + 'px', height: size + 'px' },
       'data-locked': unlocked ? null : '1',
       'aria-label': (isBoss ? t('boss') : t('race') + ' ' + n.label) + ' · ' + t(regionKey(n.region)),
       onclick: () => startNode(n.id),
-    },
-      !unlocked ? h('span', { class: 'ic lock', html: IC.lock })
-        : isBoss ? h('span', { class: 'ic crown', html: IC.crown })
-          : h('span', { class: 'node-num' }, String(n.label)),
-    );
-    const wrap = h('div', { class: cls.join(' '), style: { left: cx(n) - 45 + 'px', top: cy(n) - r + 'px' } }, circle);
+    });
+    if (!unlocked) tile.append(pixelArt(PX.lock.rows, PX.lock.colors, 3));
+    else {
+      tile.append(trackThumb(thumbFor(n), regionKey(n.region), isBoss ? 26 : 24));
+      tile.append(isBoss ? h('span', { class: 'node-crown' }, pixelArt(PX.crown.rows, PX.crown.colors, 2)) : h('span', { class: 'node-num' }, String(n.label)));
+    }
+    const wrap = h('div', { class: cls.join(' '), style: { left: cx(n) - 45 + 'px', top: cy(n) - size / 2 + 'px' } }, tile);
+    // La camioneta del jugador, parada en la próxima carrera.
+    if (n.id === nextId) wrap.prepend(h('span', { class: 'node-truck' }, truckIcon(sprites, 'red', 1, 24)));
     if (done) wrap.append(starRow(nodeStars(progress, n.id), 'node-stars'));
     else if (!unlocked) {
       const miss = starsMissing(progress, n.id);
       if (miss > 0) wrap.append(h('div', { class: 'node-gate' }, h('span', { class: 'ic', html: IC.star }), String(miss)));
     }
-    // El nombre de la región, en la carrera que la abre.
-    if (!n.requires.length || nodeById(n.requires[0]).type === 'boss') {
-      wrap.append(h('div', { class: 'region-tag' }, t(regionKey(n.region))));
-    }
     inner.appendChild(wrap);
+  }
+  // El letrero de cada región, a un lado, donde empieza su terreno (el desierto, abajo del todo).
+  for (const b of bands) {
+    const ri = regions().findIndex(r => r.key === b.key);
+    const top = ri === 0 ? height - 30 : b.y1 * SCALE - 12;
+    inner.appendChild(h('div', { class: 'region-tag', style: { top: top + 'px' } }, t(b.key)));
   }
   return h('div', { class: 'map-scroll', 'data-testid': 'map' }, inner);
 }

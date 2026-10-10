@@ -636,3 +636,132 @@ export function stepParticles (fx, dt) {
     if (p.life <= 0) fx.parts.splice(i, 1);
   }
 }
+
+// ---------- Mapa del campeonato ----------
+/**
+ * Pinta el terreno del mapa con el mismo pixel art que la carrera: una franja por región
+ * (de abajo arriba, con el borde entre dos regiones hecho a mordiscos), caminos de tierra
+ * entre carreras (con rodadas en los ya recorridos), un claro bajo cada carrera y los
+ * adornos de cada región sueltos por el campo. Todo en píxeles de mapa; el lienzo se
+ * amplía sin suavizar.
+ * `bands`: [{ key, y0, y1 }] de arriba abajo; `trails`: [{ x1, y1, x2, y2, on }];
+ * `pads`: [{ x, y, r }].
+ */
+export function paintMap ({ w, h, bands, trails, pads, seed = 7 }) {
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  const px = new Uint8ClampedArray(w * h * 4);
+  const set = (x, y, c, k = 1) => {
+    const i = (y * w + x) * 4;
+    px[i] = c[0] * k; px[i + 1] = c[1] * k; px[i + 2] = c[2] * k; px[i + 3] = 255;
+  };
+  const palAt = (x, y) => {
+    // El borde entre regiones serpentea y se come un par de píxeles a cada lado.
+    const yy = y + (blotch(x + 300, y, 7) - 0.5) * 9;
+    for (const b of bands) if (yy < b.y1) return PALETTES[b.key];
+    return PALETTES[bands[bands.length - 1].key];
+  };
+  const segDist = (x, y, s) => {
+    const dx = s.x2 - s.x1, dy = s.y2 - s.y1, l2 = dx * dx + dy * dy || 1;
+    const u = Math.max(0, Math.min(1, ((x - s.x1) * dx + (y - s.y1) * dy) / l2));
+    return { d: Math.hypot(x - (s.x1 + u * dx), y - (s.y1 + u * dy)), u, lat: ((x - s.x1) * dy - (y - s.y1) * dx) / Math.sqrt(l2) };
+  };
+  const RT = 3.2;    // medio ancho del camino
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const pal = palAt(x, y);
+      const n = hash(x, y), n2 = hash(x >> 1, y >> 1);
+      let best = null;
+      for (const s of trails) { const r = segDist(x, y, s); if (!best || r.d < best.d) best = { ...r, s }; }
+      let pad = 1e9;
+      for (const p of pads) pad = Math.min(pad, Math.hypot(x - p.x, y - p.y) - p.r);
+      const d = Math.min(best ? best.d - RT : 1e9, pad);
+      if (d < 0) {
+        let k = 0.9 + 0.2 * blotch(x, y, 9) + 0.08 * (blotch(x + 40, y + 9, 3) - 0.5);
+        if (d > -1) k *= 0.86;
+        if (n > 0.95) k *= 0.84; else if (n < 0.04) k *= 1.12;
+        // Rodadas en los caminos ya recorridos: dos rayas, entrecortadas.
+        if (best && best.s.on && best.d - RT < 0 && pad >= 0) {
+          const off = Math.abs(Math.abs(best.lat) - 1.3);
+          if (off < 0.55 && blotch(best.u * 60, best.lat, 4) > 0.3) k *= 0.74;
+        }
+        set(x, y, n2 < 0.5 ? pal.track : pal.track2, k);
+      } else if (d < 1.2 && hash(x + 13, y + 29) > 0.45) {
+        set(x, y, pal.tuft, 1);      // matas en la orilla del camino
+      } else {
+        let k = 0.93 + 0.14 * blotch(x + 99, y + 31, 10);
+        if (n > 0.975) k *= 1.1; else if (n < 0.03) k *= 0.9;
+        set(x, y, blotch(x, y, 5) < 0.5 ? pal.out : pal.out2, k);
+      }
+    }
+  }
+  ctx.putImageData(new ImageData(px, w, h), 0, 0);
+
+  // Adornos: por el campo, lejos de caminos y claros, con los de la región de cada punto.
+  const rand = rng(seed);
+  const spots = [];
+  const free = (x, y, d) => spots.every(s => Math.hypot(s[0] - x, s[1] - y) >= d);
+  const clear = (x, y) => trails.every(s => segDist(x, y, s).d > RT + 3) && pads.every(p => Math.hypot(x - p.x, y - p.y) > p.r + 4);
+  const budget = Math.floor(w * h / 60);
+  for (let k = 0; k < budget * 8 && spots.length < budget; k++) {
+    const x = 2 + Math.floor(rand() * (w - 8)), y = 6 + Math.floor(rand() * (h - 10));
+    if (!clear(x, y) || !free(x, y, 4)) continue;
+    const kinds = DECO_SETS[palAt(x, y).deco];
+    let tot = 0; for (const [, wt] of kinds.field) tot += wt;
+    let r = rand() * tot, deco = DECO[kinds.field[0][0]];
+    for (const [name, wt] of kinds.field) { r -= wt; if (r <= 0) { deco = DECO[name]; break; } }
+    spots.push([x, y, deco]);
+  }
+  spots.sort((a, b) => a[1] - b[1]);
+  for (const [x, y, deco] of spots) {
+    const top = y - deco.rows.length;
+    ctx.fillStyle = 'rgba(0,0,0,.22)';
+    ctx.fillRect(x + 1, y, deco.rows[0].length - 1, 1);
+    deco.rows.forEach((row, ry) => {
+      for (let rx = 0; rx < row.length; rx++) {
+        if (row[rx] === '.') continue;
+        ctx.fillStyle = deco.colors[row[rx]]; ctx.fillRect(x + rx, top + ry, 1, 1);
+      }
+    });
+  }
+  return cv;
+}
+
+/** Un dibujito de píxeles (filas de letras → colores, como los adornos), ampliado sin suavizar. */
+export function pixelArt (rows, colors, scale = 3) {
+  const cv = document.createElement('canvas');
+  cv.width = rows[0].length * scale; cv.height = rows.length * scale;
+  cv.className = 'px-art';
+  const ctx = cv.getContext('2d');
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      if (row[x] === '.') continue;
+      ctx.fillStyle = colors[row[x]]; ctx.fillRect(x * scale, y * scale, scale, scale);
+    }
+  });
+  return cv;
+}
+
+/** Miniatura del trazado de una carrera (como la casilla «start next race» del original). */
+export function trackThumb (samples, regionKey, size = 22) {
+  const pal = PALETTES[regionKey] || PALETTES.desert;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  cv.className = 'px-art track-thumb';
+  const ctx = cv.getContext('2d');
+  const sx = (size - 4) / W, sy = (size - 4) / H;
+  ctx.fillStyle = `rgba(${pal.out.join(',')},.55)`; ctx.fillRect(0, 0, size, size);
+  const path = () => {
+    ctx.beginPath();
+    samples.forEach((q, i) => { const x = 2 + q.x * sx, y = 2 + q.y * sy; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.closePath();
+  };
+  ctx.lineJoin = 'round';
+  path(); ctx.lineWidth = 4; ctx.strokeStyle = `rgb(${pal.wallA.join(',')})`; ctx.stroke();
+  path(); ctx.lineWidth = 2.4; ctx.strokeStyle = `rgb(${pal.track.join(',')})`; ctx.stroke();
+  // La salida: un trazo de meta blanco en la primera muestra.
+  const q = samples[0];
+  ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(1 + q.x * sx), Math.round(1 + q.y * sy), 2, 2);
+  return cv;
+}

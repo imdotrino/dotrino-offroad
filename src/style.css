@@ -10,7 +10,10 @@
   --accent-2: #ffab4d;
   --gold: #fbbf24;
   --ok: #34d399;
-  --radius: 14px;
+  --ink: #0d0a08;
+  --radius: 3px;
+  /* Bisel de los paneles del original: luz arriba-izquierda, sombra abajo-derecha. */
+  --bevel: inset 2px 2px 0 rgba(255,255,255,.16), inset -2px -2px 0 rgba(0,0,0,.42);
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -46,17 +49,18 @@ body.mode-race dotrino-topbar { display: none; }
 .cc-install { --cci-bg: var(--surface); --cci-text: var(--text); --cci-border: var(--border); }
 
 .btn {
-  border: 1px solid var(--border); background: var(--surface); color: var(--text);
-  border-radius: 11px; padding: 10px 14px; font-size: .92rem; font-weight: 700; line-height: 1;
+  border: 2px solid var(--ink); background: var(--surface); color: var(--text);
+  border-radius: var(--radius); padding: 10px 14px; font-size: .92rem; font-weight: 800; line-height: 1;
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  box-shadow: var(--bevel), 0 3px 0 var(--ink);
   transition: background .15s, border-color .15s;
 }
 .btn:hover { background: var(--surface2); }
-.btn:active { transform: translateY(1px); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #1d1206; }
+.btn:active { transform: translateY(3px); box-shadow: var(--bevel); }
+.btn.primary { background: var(--accent); color: #1d1206; }
 .btn.primary:hover { background: var(--accent-2); }
 .btn.block { width: 100%; margin-top: 9px; }
-.btn:disabled { opacity: .55; cursor: not-allowed; background: var(--surface); border-color: var(--border); color: var(--muted); }
+.btn:disabled { opacity: .55; cursor: not-allowed; background: var(--surface); color: var(--muted); }
 .btn .ic svg { display: block; width: 18px; height: 18px; }
 
 /* ---------- Mapa ---------- */
@@ -65,8 +69,9 @@ body.mode-race dotrino-topbar { display: none; }
   width: 100%; max-width: 520px; margin: 4px auto 6px; padding: 0 14px;
 }
 .stat-chip {
-  display: inline-flex; align-items: center; gap: 6px; padding: 8px 11px; border-radius: 999px;
-  background: var(--surface); border: 1px solid var(--border); font-variant-numeric: tabular-nums; font-size: .92rem;
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 11px; border-radius: var(--radius);
+  background: var(--surface); border: 2px solid var(--ink); box-shadow: var(--bevel);
+  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: .92rem;
 }
 .stat-chip .star svg { width: 16px; height: 16px; color: var(--gold); display: block; }
 .nitro-tag {
@@ -76,44 +81,75 @@ body.mode-race dotrino-topbar { display: none; }
 .card {
   display: flex; align-items: center; gap: 12px; text-align: left;
   width: calc(100% - 28px); max-width: 492px; margin: 4px auto 2px; padding: 12px 14px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text);
+  background: var(--surface); border: 2px solid var(--ink); border-radius: var(--radius); color: var(--text);
+  box-shadow: var(--bevel), 0 3px 0 var(--ink);
 }
 .card:hover { background: var(--surface2); }
+.card:active { transform: translateY(3px); box-shadow: var(--bevel); }
 .card .ic svg { display: block; width: 26px; height: 26px; color: var(--accent-2); }
 .card-txt { display: flex; flex-direction: column; gap: 3px; }
 .card-txt .muted { font-size: .8rem; line-height: 1.3; }
 .map-scroll { flex: 1; display: flex; justify-content: center; padding: 10px 0 calc(env(safe-area-inset-bottom) + 34px); }
-.map-inner { position: relative; margin: 0 auto; }
-.map-edges { position: absolute; inset: 0; pointer-events: none; }
-.edge { stroke: var(--border); stroke-width: 6; stroke-linecap: round; stroke-dasharray: 2 11; }
-.edge.on { stroke: color-mix(in srgb, var(--accent) 70%, var(--border)); }
+/* El terreno, enmarcado por la valla a rayas de la pista. */
+.map-inner {
+  position: relative; margin: 0 auto; border: 6px solid transparent; box-sizing: content-box;
+  background: repeating-linear-gradient(45deg, #de3a30 0 7px, #f0f0e8 7px 14px) border-box;
+  box-shadow: 0 0 0 2px var(--ink), 0 8px 0 2px var(--ink);
+}
+.map-ground { position: absolute; left: 0; top: 0; display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+.px-art { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
 .node-wrap { position: absolute; width: 90px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+/* Casilla biselada, como los botones de la tienda del original; dentro, la miniatura de la pista. */
 .node {
-  border-radius: 50%; border: 3px solid var(--reg, var(--border)); background: var(--surface2); color: var(--text);
-  display: grid; place-items: center; font-size: 1.15rem; font-weight: 800;
-  box-shadow: 0 5px 0 rgba(0,0,0,.35);
+  position: relative; border: 2px solid var(--ink); border-radius: var(--radius); padding: 0;
+  background: var(--reg, var(--surface2)); color: var(--text);
+  display: grid; place-items: center;
+  box-shadow: var(--bevel), 0 4px 0 var(--ink);
 }
 .node:hover { filter: brightness(1.12); }
-.node:active { transform: translateY(2px); box-shadow: 0 3px 0 rgba(0,0,0,.35); }
-.node .ic svg { width: 24px; height: 24px; display: block; }
-.reg-desert { --reg: #d8a868; } .reg-forest { --reg: #5aa652; } .reg-snow { --reg: #b8d0ea; } .reg-volcano { --reg: #e0603a; }
-.node-wrap.locked .node { background: var(--surface); color: var(--muted); border-style: dashed; box-shadow: none; }
-.node-wrap.boss .node { border-radius: 18px; }
-.node-wrap.boss:not(.locked) .crown svg { color: var(--gold); }
-.node-wrap.next .node { animation: nodepulse 1.7s ease-in-out infinite; }
-@keyframes nodepulse {
-  0%, 100% { box-shadow: 0 5px 0 rgba(0,0,0,.35), 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
-  50% { box-shadow: 0 5px 0 rgba(0,0,0,.35), 0 0 0 9px transparent; }
+.node:active { transform: translateY(4px); box-shadow: var(--bevel); }
+.node .track-thumb { width: 48px; height: 48px; background: rgba(0,0,0,.28); box-shadow: inset 0 0 0 2px rgba(0,0,0,.35); }
+.node-wrap.boss .track-thumb { width: 52px; height: 52px; }
+.node-num {
+  position: absolute; left: 2px; top: 2px; min-width: 16px; height: 16px; padding: 0 3px;
+  display: grid; place-items: center; background: var(--ink); color: #ffe070;
+  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace; font-size: .78rem; font-weight: 900; line-height: 1;
 }
+.node-crown { position: absolute; left: 50%; top: -9px; transform: translateX(-50%); filter: drop-shadow(0 2px 0 var(--ink)); }
+.reg-desert { --reg: #c89050; } .reg-forest { --reg: #4e8a46; } .reg-snow { --reg: #8aa8c8; } .reg-volcano { --reg: #a0503a; }
+.node-wrap.locked .node { background: #3a3028; box-shadow: var(--bevel); }
+/* El jefe: casilla con marco ajedrezado de bandera. */
+.node-wrap.boss .node {
+  background:
+    linear-gradient(var(--reg), var(--reg)) padding-box,
+    repeating-conic-gradient(#f4f4ee 0 25%, var(--ink) 0 50%) 0 0 / 12px 12px border-box;
+  border: 6px solid transparent;
+}
+.node-wrap.boss.locked .node { background: linear-gradient(#3a3028, #3a3028) padding-box, repeating-conic-gradient(#8a8a84 0 25%, var(--ink) 0 50%) 0 0 / 12px 12px border-box; }
+.node-wrap.next .node { animation: nodepulse 1.2s steps(2, end) infinite; }
+@keyframes nodepulse {
+  0%, 100% { box-shadow: var(--bevel), 0 4px 0 var(--ink), 0 0 0 3px var(--accent); }
+  50% { box-shadow: var(--bevel), 0 4px 0 var(--ink), 0 0 0 3px transparent; }
+}
+.node-truck { position: absolute; left: 50%; top: -34px; transform: translateX(-50%); pointer-events: none; z-index: 2; }
+.node-truck .truck-icon { background: none; border: 0; border-radius: 0; filter: drop-shadow(0 2px 0 rgba(0,0,0,.5)); }
 .node-stars, .win-stars { display: flex; gap: 2px; justify-content: center; }
-.node-stars .ns { color: var(--border); line-height: 0; }
+.node-stars { background: var(--ink); padding: 2px 4px; }
+.node-stars .ns { color: #5a4a3a; line-height: 0; }
 .node-stars .ns svg { width: 13px; height: 13px; }
 .ns.on { color: var(--gold); }
-.node-gate { display: inline-flex; align-items: center; gap: 3px; font-size: .74rem; font-weight: 800; color: var(--gold); }
+.node-gate {
+  display: inline-flex; align-items: center; gap: 3px; font-size: .74rem; font-weight: 900; color: var(--gold);
+  background: var(--ink); padding: 2px 5px; font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+}
 .node-gate .ic svg { width: 13px; height: 13px; display: block; }
+/* Letrero de la región: tabla biselada con el nombre en letras de máquina. */
 .region-tag {
-  font-size: .64rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;
-  color: var(--reg); white-space: nowrap;
+  position: absolute; left: 8px;
+  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+  font-size: .72rem; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; line-height: 1;
+  color: #ffe070; white-space: nowrap; padding: 5px 8px 4px; background: #5a3c22;
+  border: 2px solid var(--ink); box-shadow: var(--bevel), 0 3px 0 var(--ink); text-shadow: 1px 1px 0 var(--ink);
 }
 
 /* ---------- Carrera ---------- */
@@ -188,12 +224,12 @@ body.mode-race dotrino-topbar { display: none; }
   background: rgba(8, 5, 3, .7); padding: 18px; overflow-y: auto;
 }
 .modal {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
-  padding: 22px; width: 100%; max-width: 380px; box-shadow: 0 22px 60px rgba(0,0,0,.5);
+  background: var(--surface); border: 2px solid var(--ink); border-radius: var(--radius);
+  padding: 22px; width: 100%; max-width: 380px; box-shadow: var(--bevel), 0 6px 0 var(--ink), 0 22px 60px rgba(0,0,0,.5);
   animation: pop .18s ease; margin: auto;
 }
 @keyframes pop { from { transform: scale(.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-.modal h2 { margin: 0 0 6px; font-size: 1.2rem; }
+.modal h2, .garage-head h2 { margin: 0 0 6px; font-size: 1.2rem; font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace; text-transform: uppercase; letter-spacing: 1px; }
 .modal p { color: var(--muted); margin: 0 0 8px; font-size: .92rem; }
 .modal.win { text-align: center; }
 .win-place {
@@ -218,7 +254,7 @@ body.mode-race dotrino-topbar { display: none; }
 .toast {
   position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 26px); z-index: 80;
   transform: translateX(-50%) translateY(12px); opacity: 0; pointer-events: none;
-  background: #000; color: #fff; padding: 11px 16px; border-radius: 12px; font-size: .9rem; font-weight: 600;
+  background: var(--ink); color: #fff; padding: 11px 16px; border: 2px solid #f0f0e8; border-radius: var(--radius); font-size: .9rem; font-weight: 600;
   max-width: min(92vw, 420px); text-align: center; transition: opacity .2s, transform .2s;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -228,17 +264,17 @@ body.mode-race dotrino-topbar { display: none; }
 .garage-head { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
 .garage-head h2 { margin: 0; font-size: 1.3rem; }
 .garage-money { font-size: 1.3rem; font-weight: 800; color: var(--ok); font-variant-numeric: tabular-nums; }
-.truck-icon { image-rendering: pixelated; image-rendering: crisp-edges; background: var(--surface2); border-radius: 14px; border: 1px solid var(--border); }
+.truck-icon { image-rendering: pixelated; image-rendering: crisp-edges; background: var(--surface2); border-radius: var(--radius); border: 2px solid var(--ink); box-shadow: var(--bevel); }
 .up-row {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); border: 2px solid var(--ink); border-radius: var(--radius); box-shadow: var(--bevel);
   padding: 12px 14px; margin-top: 9px;
 }
 .up-txt { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .up-txt .muted { font-size: .8rem; line-height: 1.3; }
 .up-txt .have { font-size: .8rem; font-weight: 700; color: var(--accent-2); }
 .pips { display: flex; gap: 4px; margin-top: 2px; }
-.pips i { width: 18px; height: 7px; border-radius: 2px; background: var(--border); }
+.pips i { width: 18px; height: 7px; background: var(--ink); box-shadow: inset 0 0 0 1px #5a4a3a; }
 .pips i.on { background: var(--accent); }
 .pips .lvl { font-size: 11px; color: var(--muted); margin-left: 4px; }
 .btn.buy { flex: none; min-width: 124px; font-variant-numeric: tabular-nums; font-size: .84rem; }
