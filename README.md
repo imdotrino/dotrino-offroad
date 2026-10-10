@@ -87,7 +87,7 @@ golpe en la cresta de una rampa. Un desnivel de un piso bajo una rueda (un muro 
 módulos) no cuenta como suelo que se pise. Además se inclinan con la normal del piso (cabeceo a lo
 largo del eje y balanceo entre las ruedas, con la suavidad de una suspensión) y en el aire
 levantan el morro al subir y lo bajan al caer; los cuadros inclinados se dibujan la primera vez
-que hacen falta (`renderTruck`) y se guardan en caché a pasos de ~5°.
+que hacen falta (`renderTruck`) y se guardan en caché a pasos de ~5°, con tope de 1.500 cuadros (unos 21 MB; se tira el que lleva más sin usarse).
 
 Las sombras salen de las alturas (luz del noroeste): una valla, una roca, un talud o el borde
 de una rampa arrojan una sombra tan larga como altos son.
@@ -113,6 +113,9 @@ semilla, en arco o cortada a 45° (`buildField` mide la franja con distancia nor
 octógono» según la esquina más cercana), y después `smoothCorners` lima sobre la silueta los
 picos que queden, por fuera y por dentro, con un arco de 9 px.
 La trazada por la que se mide el avance y conduce la máquina sí va redondeada.
+Armar una pista cuesta ~120 ms (`buildField`: la distancia al polígono tiene fórmula cerrada
+en las esquinas en arco y búsqueda solo en las cortadas a 45°; la muestra más cercana se busca
+por casillas de 64 px y solo dentro de la franja de la pista).
 
 Las pistas se **arman por piezas** a partir de una semilla (`generateLayout` en `src/track.js`):
 sobre una cuadrícula de 3×3 casillas se elige un grupo de casillas pegadas y la pista es su

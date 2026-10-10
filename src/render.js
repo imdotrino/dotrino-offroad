@@ -447,14 +447,20 @@ export function makeSprites () {
   out.scratch = document.createElement('canvas');
   out.scratch.width = SP; out.scratch.height = SP;
   for (const color of Object.keys(TRUCK_COLORS)) out[color] = truckFrames(color);
-  // Cuadros inclinados, dibujados la primera vez que hacen falta y guardados.
-  const tilted = new Map();
+  // Cuadros inclinados, dibujados la primera vez que hacen falta y guardados. Con tope: cada
+  // cuadro pesa 14 KB y en una carrera salen unos 25 nuevos por segundo; sin tope la caché
+  // crecía 20 MB por minuto hasta que el recolector de basura paraba el juego. Se tira el
+  // que lleva más tiempo sin usarse.
+  const tilted = new Map(), TILT_CACHE = 1500;
   out.tilted = (color, f, pitch, roll) => {
     const pi = tiltIdx(pitch), ri = tiltIdx(roll);
     if (!pi && !ri) return out[color][f];
     const key = color + '|' + f + '|' + pi + '|' + ri;
     let r = tilted.get(key);
-    if (!r) { r = renderTruck(color, (f / FRAMES) * Math.PI * 2, pi * TILT_STEP, ri * TILT_STEP); tilted.set(key, r); }
+    if (r) { tilted.delete(key); tilted.set(key, r); return r; }     // al final: recién usado
+    r = renderTruck(color, (f / FRAMES) * Math.PI * 2, pi * TILT_STEP, ri * TILT_STEP);
+    tilted.set(key, r);
+    if (tilted.size > TILT_CACHE) tilted.delete(tilted.keys().next().value);
     return r;
   };
   // Sombra: la huella de la camioneta en el suelo, por ángulo.

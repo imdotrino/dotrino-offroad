@@ -264,6 +264,11 @@ function segDist (px, py, a, b, cap, style) {
   const ly = Math.max(Math.min(a[1], b[1]) - py, py - Math.max(a[1], b[1]), 0);
   if (Math.max(lx, ly) >= cap) return cap;
   const ax = a[0] - px, ay = a[1] - py, bx = b[0] - a[0], by = b[1] - a[1];
+  if (style === 0) {
+    // Distancia normal a un segmento: tiene fórmula cerrada, sin buscar.
+    const t = Math.max(0, Math.min(1, -(ax * bx + ay * by) / (bx * bx + by * by || 1)));
+    return Math.min(cap, Math.hypot(ax + bx * t, ay + by * t));
+  }
   const g = (t) => {
     const u = Math.abs(ax + bx * t), v = Math.abs(ay + by * t);
     return style === 0 ? Math.hypot(u, v) : Math.max(u, v, (u + v) * OCT);
@@ -286,25 +291,41 @@ function buildField (s, poly, styles) {
   const n = s.length, m = poly.length;
   const field = new Float32Array(W * H);
   const near = new Float32Array(W * H);
+  // Las muestras de la trazada, en casillas de CELL px: para saber cuál cae más cerca de un
+  // punto basta mirar su casilla y las ocho vecinas. `near` solo hace falta dentro de la
+  // pista y junto a la valla (NEAR_BAND cubre lo que smoothCorners pueda rellenar).
+  const CELL = 64, NEAR_BAND = HALF + 16, cw = Math.ceil(W / CELL) + 2, ch = Math.ceil(H / CELL) + 2;
+  const cells = Array.from({ length: cw * ch }, () => []);
+  for (let i = 0; i < n; i++) cells[(Math.floor(s[i].y / CELL) + 1) * cw + Math.floor(s[i].x / CELL) + 1].push(i);
+  const nearest = (x, y, list) => {
+    let best = 1e9, bn = 0;
+    for (const i of list) {
+      const a = s[i], b = s[(i + 1) % n];
+      const vx = b.x - a.x, vy = b.y - a.y;
+      const wx = x - a.x, wy = y - a.y;
+      let t = (wx * vx + wy * vy) / (vx * vx + vy * vy);
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = wx - vx * t, dy = wy - vy * t;
+      const d = dx * dx + dy * dy;
+      if (d < best) { best = d; bn = i + t; }
+    }
+    return bn;
+  };
+  const all = Array.from({ length: n }, (_, i) => i), around = [];
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       let box = 1e9;
       let style = 0, vd = 1e9;
       for (let k = 0; k < m; k++) { const d = (poly[k][0] - x) ** 2 + (poly[k][1] - y) ** 2; if (d < vd) { vd = d; style = styles[k]; } }
       for (let k = 0; k < m; k++) box = segDist(x, y, poly[k], poly[(k + 1) % m], box, style);
-      let best = 1e9, bn = 0;
-      for (let i = 0; i < n; i++) {
-        const a = s[i], b = s[(i + 1) % n];
-        const vx = b.x - a.x, vy = b.y - a.y;
-        const wx = x - a.x, wy = y - a.y;
-        let t = (wx * vx + wy * vy) / (vx * vx + vy * vy);
-        t = t < 0 ? 0 : t > 1 ? 1 : t;
-        const dx = wx - vx * t, dy = wy - vy * t;
-        const d = dx * dx + dy * dy;
-        if (d < best) { best = d; bn = i + t; }
-      }
       field[y * W + x] = box;
-      near[y * W + x] = bn;
+      if (box >= NEAR_BAND) continue;
+      const cx = Math.floor(x / CELL) + 1, cy = Math.floor(y / CELL) + 1;
+      around.length = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) for (const i of cells[(cy + dy) * cw + cx + dx]) around.push(i);
+      // Dentro de la franja la muestra más cercana cae a menos de una casilla; si no hubiera
+      // ninguna a la vista (no debería pasar), se miran todas.
+      near[y * W + x] = nearest(x, y, around.length ? around : all);
     }
   }
   return { field, near };
