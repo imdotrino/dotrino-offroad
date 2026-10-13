@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import { execSync } from 'node:child_process'
+import prerender from '@dotrino/prerender/vite'
 
 // base './' → rutas relativas, para servir bajo el subdominio offroad.dotrino.com
 // (y también bajo el mirror dotrino.github.io/offroad/). Los assets PWA viven
@@ -17,7 +18,9 @@ function commitMeta () {
 }
 
 export default defineConfig({
-  plugins: [commitMeta()],
+  plugins: [
+    // El HTML llega con contenido para quien lo lee sin ejecutar JavaScript.
+    prerender(), commitMeta()],
   base: './',
   server: { port: 3310, host: true }
 })
