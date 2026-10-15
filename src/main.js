@@ -1,3 +1,4 @@
+import '@dotrino/theme/theme.css'
 import './style.css';
 import { h, clear } from './dom.js';
 import { t, getLang, setLang, fmtMoney } from './i18n.js';
@@ -41,7 +42,7 @@ const nav = createBackNav();
 // ---------- Topbar estándar del ecosistema (§5 / §6 / §6.1 / §9) ----------
 const topbar = h('dotrino-topbar', {
   brand: t('brand'), icon: 'icon.svg', 'brand-href': './', lang: getLang(),
-  home: 'https://dotrino.com', profile: true,
+  home: 'https://dotrino.com', profile: true, theme: true,
   'support-href': 'https://ko-fi.com/dotrino',
   'support-repo': 'imdotrino/dotrino-offroad',
   'support-discord': 'https://discord.gg/D648uq7cth',
@@ -53,14 +54,6 @@ shareEl.addEventListener('cc-share-close', () => { shareEl.open = false; });
 shareEl.addEventListener('cc-share-shared', onShared);
 clear(app).append(topbar, screen, toastEl, shareEl);
 
-topbar.profileTheme = {
-  '--ccp-bg': '#1d1712', '--ccp-bg-2': '#261e17', '--ccp-bg-3': '#30261d', '--ccp-bg-4': '#3d3024',
-  '--ccp-border': '#3d3024', '--ccp-text': '#f6ecdf', '--ccp-muted': '#b09c86',
-  '--ccp-accent': '#f08a24', '--ccp-accent-2': '#ffab4d', '--ccp-accent-text': '#1d1712',
-  '--ccp-gold': '#fbbf24', '--ccp-derived': '#fcd34d',
-  '--ccp-online': '#34d399', '--ccp-affinity': '#ffab4d', '--ccp-input-bg': '#16110d',
-  '--ccp-radius': '14px',
-};
 
 (async () => {
   const id = await getIdentity();

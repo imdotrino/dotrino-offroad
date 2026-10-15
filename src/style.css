@@ -1,15 +1,9 @@
-/* Fuentes empaquetadas (nada de Google Fonts en vivo): las dos de píxeles para el juego y
-   Quicksand para la barra del ecosistema (tema Cool & Cozy). Todas OFL. */
+/* Las dos fuentes de píxeles son del juego (OFL, empaquetadas). La barra, las fuentes de
+   la interfaz y los componentes son los del ecosistema (@dotrino/theme, CONVENCIONES §5):
+   la barra sigue al tema claro u oscuro, y el juego conserva su paleta oscura. */
 @font-face { font-family: 'Press Start 2P'; src: url('/fonts/press-start-2p.woff2') format('woff2'); font-weight: 400; font-display: swap; }
 @font-face { font-family: 'Pixelify Sans'; src: url('/fonts/pixelify-sans.woff2') format('woff2'); font-weight: 400 700; font-display: swap; }
-@font-face {
-  font-family: 'Quicksand'; src: url('/fonts/quicksand.woff2') format('woff2'); font-weight: 300 700; font-display: swap;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: 'Quicksand'; src: url('/fonts/quicksand-ext.woff2') format('woff2'); font-weight: 300 700; font-display: swap;
-  unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
+#app > :not(dotrino-topbar) { color-scheme: dark; }
 
 :root {
   --bg1: #16110d;
@@ -51,19 +45,10 @@ button { font-family: inherit; cursor: pointer; }
 .muted { color: var(--muted); }
 .hidden { display: none !important; }
 
-/* ---------- Topbar: <dotrino-topbar> (§5), vestido con la paleta de la app ---------- */
-dotrino-topbar {
-  font-family: 'Quicksand', system-ui, sans-serif;
-  --dotrino-topbar-bg: #181c1e;
-  --dotrino-topbar-border: #3f484e;
-  --dotrino-topbar-text: #dfe3e6;
-  --dotrino-topbar-muted: #bfc8cf;
-  --dotrino-topbar-accent: #81cfff;
-  --dotrino-topbar-font: 'Quicksand', system-ui, sans-serif;
-}
+/* ---------- Topbar: <dotrino-topbar> (§5); los colores los pone el tema ---------- */
 /* En carrera la pista ocupa toda la pantalla: la barra se oculta solo en esa vista. */
 body.mode-race dotrino-topbar { display: none; }
-.cc-install { --cci-bg: #1c2022; --cci-text: #dfe3e6; --cci-border: #3f484e; font-family: 'Quicksand', system-ui, sans-serif; }
+.cc-install { --cci-bg: var(--dt-surface-2); --cci-text: var(--dt-text); --cci-border: var(--dt-line); font-family: var(--dt-font); }
 
 .btn {
   border: 2px solid var(--ink); background: var(--surface); color: var(--text);

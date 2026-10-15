@@ -13,14 +13,15 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@dotrino/identity": "0.109.0",
-    "@dotrino/install": "0.3.2",
+    "@dotrino/identity": "0.114.1",
+    "@dotrino/install": "0.3.3",
     "@dotrino/nav": "0.3.0",
     "@dotrino/reputation": "0.12.0",
     "@dotrino/share": "0.3.0",
     "@dotrino/store": "0.12.3",
-    "@dotrino/support": "0.9.0",
-    "@dotrino/topbar": "0.15.3"
+    "@dotrino/support": "0.9.3",
+    "@dotrino/theme": "0.1.0",
+    "@dotrino/topbar": "0.16.1"
   },
   "overrides": {
     "@dotrino/store": "0.12.3"
