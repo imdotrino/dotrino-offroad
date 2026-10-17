@@ -14,7 +14,7 @@ export async function getIdentity() {
   try {
     identity = await Identity.connect();
   } catch (e) {
-    console.warn('[identity] vault inalcanzable:', e && e.message);
+    console.warn('[identity] vault unreachable:', e && e.message);
     identity = null;
   }
   return identity;
