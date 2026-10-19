@@ -10,7 +10,8 @@ import * as audio from './audio.js';
 const DT = 1 / 60;
 const ordinal = (n) => t('place' + n);
 
-function fmtTime (s) {
+/** Segundos → `m:ss.d`. */
+export function fmtTime (s) {
   const m = Math.floor(s / 60), r = s - m * 60;
   return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1);
 }

@@ -8,7 +8,7 @@ import {
   isUnlocked, starsMissing, nextNodeId, followingNodeId, starsForPlace, prizeFor,
   cashPickupValue, rivalsFor, randomNode, randomPrize, UPGRADES, NITRO_PRICE, START, upgradePrice,
 } from './levels.js';
-import { startRace } from './race.js';
+import { startRace, fmtTime } from './race.js';
 import { makeSprites, truckIcon, paintMap, pixelArt, trackThumb } from './render.js';
 import { trackOutline } from './track.js';
 import * as audio from './audio.js';
@@ -92,10 +92,6 @@ function persist () {
   saveProgress(progress).catch(e => { console.error('[offroad] could not save progress', e); showToast('⚠ ' + t('storeProblem'), 6000); });
 }
 function closeLayer () { if (layer) { const l = layer; layer = null; l.close(); } }
-function fmtTime (ms) {
-  const s = ms / 1000, m = Math.floor(s / 60), r = s - m * 60;
-  return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1);
-}
 const starRow = (n, cls) => {
   const row = h('div', { class: cls });
   for (let k = 1; k <= 3; k++) row.append(h('span', { class: 'ns' + (k <= n ? ' on' : ''), html: IC.star }));
@@ -335,8 +331,8 @@ function showResult (node, shared, r) {
   const toMap = () => { close(); current?.handle.destroy(); current = null; renderMap(); };
 
   const meta = h('div', { class: 'win-meta' },
-    h('div', { class: 's' }, h('div', { class: 'k' }, t('time')), h('div', { class: 'v' }, fmtTime(r.timeMs))),
-    r.bestLapMs ? h('div', { class: 's' }, h('div', { class: 'k' }, t('bestLap')), h('div', { class: 'v' }, fmtTime(r.bestLapMs))) : null,
+    h('div', { class: 's' }, h('div', { class: 'k' }, t('time')), h('div', { class: 'v' }, fmtTime(r.timeMs / 1000))),
+    r.bestLapMs ? h('div', { class: 's' }, h('div', { class: 'k' }, t('bestLap')), h('div', { class: 'v' }, fmtTime(r.bestLapMs / 1000))) : null,
     !shared ? h('div', { class: 's' }, h('div', { class: 'k' }, t('prize')), h('div', { class: 'v money', 'data-testid': 'result-prize' }, fmtMoney(r.prize + r.picked))) : null,
   );
   const overlay = h('div', { class: 'overlay', 'data-testid': 'result' },
