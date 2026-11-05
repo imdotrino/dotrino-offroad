@@ -2,6 +2,16 @@
 // (race.js) le pasa los mandos del jugador y dibuja el estado; tests/sim.mjs la corre sola.
 import { rng, distAt, heightAt, crossesLedge, W, H } from './track.js';
 
+/**
+ * @typedef {import('./track.js').Track} Track
+ * @typedef {import('./types').Truck} Truck
+ * @typedef {import('./types').TruckSetup} TruckSetup
+ * @typedef {import('./types').Controls} Controls
+ * @typedef {import('./types').RaceEvent} RaceEvent
+ * @typedef {import('./types').Pickup} Pickup
+ * @typedef {ReturnType<typeof createRace>} Race
+ */
+
 export const MAX_LEVEL = 6;
 const TRUCK_R = 8;          // radio de choque de una camioneta contra las vallas
 // Entre camionetas la caja de choque es la MITAD del dibujo: se meten una en otra al rozarse,
@@ -14,7 +24,11 @@ const NITRO_TIME = 0.75;
 const TURN_RATE = 3.1;
 const SLOPE = 55;            // cuánto frena una subida (y empuja una bajada)
 
-/** Prestaciones de una camioneta según sus niveles de mejora (0..6, admite decimales). */
+/**
+ * Prestaciones de una camioneta según sus niveles de mejora (0..6, admite decimales).
+ * @param {import('./types').Upgrades} up
+ * @returns {import('./types').TruckStats}
+ */
 export function statsFor (up) {
   return {
     accel: 72 + up.accel * 12,
@@ -25,6 +39,7 @@ export function statsFor (up) {
   };
 }
 
+/** @param {number} a */
 const wrapAngle = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 
 // Dónde pisan las ruedas respecto al centro (el dibujo mide 23×12 px: ejes a ±7 a lo largo,
@@ -35,16 +50,24 @@ const WHEEL_L = 7, WHEEL_W = 5, WHEEL_MAX = 10;
  * El suelo bajo una camioneta: lo que pisan sus cuatro ruedas, no un punto. Devuelve la altura
  * del centro (el promedio de las ruedas) y la inclinación del plano que forman, así una
  * montaña o una roca al costado la levantan y la ladean en vez de atravesarla.
+ *
+ * @param {Pick<Track, 'height' | 'ledge'>} track
+ * @param {number} x
+ * @param {number} y
+ * @param {number} a rumbo de la camioneta
+ * @returns {{ h: number, c: number, pitch: number, roll: number }}
  */
 export function groundAt (track, x, y, a) {
   const fx = Math.cos(a), fy = Math.sin(a);
   // Sobre la franja de un muro no se interpola entre píxeles: a medio píxel del corte la
   // altura saldría a media pared. Ahí vale el píxel en el que se está.
+  /** @param {number} px @param {number} py */
   const at = (px, py) => {
     const k = Math.round(py) * W + Math.round(px);
     return k >= 0 && k < W * H && track.ledge[k] ? track.height[k] : heightAt(track, px, py);
   };
   const c = at(x, y);
+  /** @param {number} dl @param {number} dw */
   const w = (dl, dw) => {
     const wx = x + fx * dl - fy * dw, wy = y + fy * dl + fx * dw;
     const h = at(wx, wy);
@@ -67,8 +90,8 @@ export function groundAt (track, x, y, a) {
 
 /**
  * @param {object} o
- * @param {object} o.track  pista de buildTrack()
- * @param {Array<{up:object, ai:boolean, skill?:number, nitro?:number, color?:string, boss?:boolean}>} o.trucks
+ * @param {Track} o.track  pista de buildTrack()
+ * @param {TruckSetup[]} o.trucks
  * @param {number} o.laps
  * @param {number} o.seed
  * @param {number} [o.grip]  factor de agarre del terreno (nieve < 1)
@@ -77,7 +100,7 @@ export function createRace ({ track, trucks, laps, seed, grip = 1 }) {
   const rand = rng(seed ^ 0x9e3779b9);
   const n = track.n;
   // Parrilla: de dos en dos, detrás de la línea (muestra 0).
-  const list = trucks.map((t, k) => {
+  const list = trucks.map(/** @returns {Truck} */ (t, k) => {
     const back = 9 + Math.floor(k / 2) * 9;
     const i = (n - back) % n;
     const s = track.samples[i];
@@ -99,11 +122,22 @@ export function createRace ({ track, trucks, laps, seed, grip = 1 }) {
   });
   for (const tr of list) { const gr = groundAt(track, tr.x, tr.y, tr.a); tr.g = tr.alt = gr.h; tr.gc = gr.c; }
   return {
-    track, laps, grip, rand, trucks: list, t: 0, state: 'countdown', countdown: 3.2,
-    finishedCount: 0, pickup: null, pickupT: 4 + rand() * 3, events: [], over: false,
+    track, laps, grip, rand, trucks: list, t: 0,
+    /** @type {'countdown' | 'racing' | 'over'} */
+    state: 'countdown', countdown: 3.2,
+    finishedCount: 0,
+    /** @type {Pickup | null} */
+    pickup: null, pickupT: 4 + rand() * 3,
+    /** @type {RaceEvent[]} lo que pasó desde la última vez que la pantalla lo vació */
+    events: [], over: false,
   };
 }
 
+/**
+ * @param {Race} race
+ * @param {Truck} tr
+ * @returns {Controls}
+ */
 function aiControl (race, tr) {
   const { track, rand } = race;
   const n = track.n, s = track.samples;
@@ -165,6 +199,12 @@ function aiControl (race, tr) {
   return { steer, gas, brake, nitro };
 }
 
+/**
+ * @param {Race} race
+ * @param {Truck} tr
+ * @param {Controls} input
+ * @param {number} dt
+ */
 function stepTruck (race, tr, input, dt) {
   const { track } = race;
   const n = track.n, s = track.samples;
@@ -392,6 +432,7 @@ function stepTruck (race, tr, input, dt) {
   }
 }
 
+/** @param {Race} race */
 function collide (race) {
   const ts = race.trucks;
   for (let i = 0; i < ts.length; i++) {
@@ -413,6 +454,10 @@ function collide (race) {
   }
 }
 
+/**
+ * @param {Race} race
+ * @param {number} dt
+ */
 function stepPickup (race, dt) {
   const { track, rand } = race;
   if (!race.pickup) {
@@ -437,7 +482,12 @@ function stepPickup (race, dt) {
   if (p.ttl <= 0) { race.pickup = null; race.pickupT = 4 + rand() * 4; }
 }
 
-/** Avanza la carrera un paso fijo. `input` son los mandos del jugador (camioneta 0). */
+/**
+ * Avanza la carrera un paso fijo. `input` son los mandos del jugador (camioneta 0).
+ * @param {Race} race
+ * @param {number} dt
+ * @param {Controls | null} [input]
+ */
 export function step (race, dt, input) {
   if (race.over) return;
   if (race.state === 'countdown') {
@@ -494,7 +544,12 @@ export function step (race, dt, input) {
   }
 }
 
-/** Posición en vivo (1..n) de una camioneta. */
+/**
+ * Posición en vivo (1..n) de una camioneta.
+ * @param {Race} race
+ * @param {number} k
+ * @returns {number}
+ */
 export function livePlace (race, k) {
   const me = race.trucks[k];
   if (me.finished) return me.place;

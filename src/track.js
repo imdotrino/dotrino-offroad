@@ -16,6 +16,21 @@ const FX = 52, FY = 54, FW = W - 104, FH = H - 108;   // área útil para los pu
 
 // Trazados: POLÍGONOS en el cuadro unidad. Cada tramo es una recta de verdad y cada esquina
 // un arco de círculo (roundedLoop), como una pista real. El primer lado (p0→p1) lleva la salida.
+/**
+ * @typedef {import('./types').Pt} Pt
+ * @typedef {import('./types').Sample} Sample
+ * @typedef {import('./types').Layout} Layout
+ * @typedef {import('./types').TrackSpec} TrackSpec
+ * @typedef {import('./types').Pit} Pit
+ * @typedef {import('./types').Rock} Rock
+ * @typedef {import('./types').Puddle} Puddle
+ * @typedef {import('./types').Hill} Hill
+ * @typedef {import('./types').Mound} Mound
+ * @typedef {import('./types').RampFx} RampFx
+ * @typedef {ReturnType<typeof buildTrack>} Track
+ */
+
+/** @type {Layout[]} */
 export const LAYOUTS = [
   { name: 'bean', pts: [[0, 0], [1, 0], [1, 1], [0.72, 1], [0.5, 0.6], [0.28, 1], [0, 1]] },
   { name: 'eight', pts: [[1, 1], [1, 0], [0.64, 0], [0.36, 1], [0, 1], [0, 0], [0.36, 0], [0.64, 1]] },
@@ -37,13 +52,17 @@ const CELLS = 3;
  * @param {number} seed
  * @param {number} [size]  cuántas casillas (3..7): más casillas, más curvas
  * @param {{cross?:number, chicane?:number}} [opts]  probabilidad de cruce y de chicana (0..1)
+ * @returns {Pt[] & { crossed: boolean, chicanes: number }}
  */
 export function generateLayout (seed, size = 4, opts = {}) {
   const pCross = opts.cross ?? 0.45, pChicane = opts.chicane ?? 0.5;
   const rand = rng((seed ^ 0x7f4a7c15) >>> 0);
+  /** @param {number} x @param {number} y */
   const key = (x, y) => y * CELLS + x;
   const want = Math.max(3, Math.min(7, Math.round(size)));
+  /** @param {Set<number>} set */
   const ok = (set) => {
+    /** @param {number} x @param {number} y */
     const has = (x, y) => x >= 0 && y >= 0 && x < CELLS && y < CELLS && set.has(key(x, y));
     // Sin hueco en medio y sin dos casillas que se toquen solo por la esquina: así el
     // contorno es UN circuito cerrado.
@@ -57,15 +76,18 @@ export function generateLayout (seed, size = 4, opts = {}) {
   const set = new Set([key(Math.floor(rand() * CELLS), Math.floor(rand() * CELLS))]);
   for (let tries = 0; tries < 200 && set.size < want; tries++) {
     const from = [...set][Math.floor(rand() * set.size)];
-    const [dx, dy] = [[1, 0], [-1, 0], [0, 1], [0, -1]][Math.floor(rand() * 4)];
+    const [dx, dy] = /** @type {Pt[]} */ ([[1, 0], [-1, 0], [0, 1], [0, -1]])[Math.floor(rand() * 4)];
     const x = from % CELLS + dx, y = Math.floor(from / CELLS) + dy;
     if (x < 0 || y < 0 || x >= CELLS || y >= CELLS || set.has(key(x, y))) continue;
     set.add(key(x, y));
     if (!ok(set)) set.delete(key(x, y));
   }
   // Contorno, en el sentido de las agujas: de cada casilla, los lados que dan afuera.
+  /** @param {number} x @param {number} y */
   const has = (x, y) => x >= 0 && y >= 0 && x < CELLS && y < CELLS && set.has(key(x, y));
+  /** @type {Map<string, Pt>} */
   const next = new Map();
+  /** @param {number} x1 @param {number} y1 @param {number} x2 @param {number} y2 */
   const edge = (x1, y1, x2, y2) => next.set(x1 + ',' + y1, [x2, y2]);
   for (const k of set) {
     const x = k % CELLS, y = Math.floor(k / CELLS);
@@ -75,13 +97,21 @@ export function generateLayout (seed, size = 4, opts = {}) {
     if (!has(x - 1, y)) edge(x, y + 1, x, y);
   }
   const first = [...next.keys()].sort()[0];
-  let loop = [], cur = first.split(',').map(Number);
-  do { loop.push(cur); cur = next.get(cur[0] + ',' + cur[1]); } while (cur[0] + ',' + cur[1] !== first);
+  /** @type {Pt[]} */
+  let loop = [];
+  /** @type {Pt} */
+  let cur = first.split(',').map(Number);
+  // El contorno es cerrado: cada vértice tiene siguiente (si faltara, `get` da undefined y
+  // revienta aquí mismo, como antes).
+  do { loop.push(cur); cur = /** @type {Pt} */ (next.get(cur[0] + ',' + cur[1])); } while (cur[0] + ',' + cur[1] !== first);
   // Fuera los vértices que quedan en medio de una recta.
+  /** @param {Pt} a @param {Pt} b @param {Pt} c */
   const turn = (a, b, c) => (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
   loop = loop.filter((b, i) => turn(loop[(i + loop.length - 1) % loop.length], b, loop[(i + 1) % loop.length]) !== 0);
   // Esquinas en diagonal: solo las que giran hacia dentro del circuito (se alejan de los demás tramos).
-  const m = loop.length, out = [];
+  /** @type {Pt[]} */
+  const out = [];
+  const m = loop.length;
   for (let i = 0; i < m; i++) {
     const a = loop[(i + m - 1) % m], b = loop[i], c = loop[(i + 1) % m];
     if (turn(a, b, c) > 0 && rand() < 0.4) {
@@ -90,12 +120,14 @@ export function generateLayout (seed, size = 4, opts = {}) {
     } else out.push(b);
   }
   let poly = out, crossed = false, chicanes = 0;
+  /** @param {Pt} a @param {Pt} b */
   const axisOf = (a, b) => (Math.abs(a[1] - b[1]) < 1e-9 ? 0 : Math.abs(a[0] - b[0]) < 1e-9 ? 1 : -1);   // 0 horizontal, 1 vertical
 
   // CRUCE. Dos rectas enfrentadas (una va, la otra vuelve) con todo el hueco entre ellas dentro
   // del circuito: se cambian de lado por dos diagonales que se cortan en medio, y el tramo que
   // queda entre ambas se recorre al revés. Es el «ocho».
   if (rand() < pCross) {
+    /** @type {{ i: number, k: number, ax: number, ua: number, ub: number, v1: number, v2: number }[]} */
     const found = [];
     for (let i = 0; i < poly.length; i++) {
       const A = poly[i], B = poly[(i + 1) % poly.length], ax = axisOf(A, B);
@@ -118,6 +150,7 @@ export function generateLayout (seed, size = 4, opts = {}) {
       const f = found[Math.floor(rand() * found.length)];
       const m2 = poly.length, rot = poly.slice(f.i).concat(poly.slice(0, f.i)), j = (f.k - f.i + m2) % m2;
       const span = f.ub - f.ua, du = Math.max(0.8, span * 0.34), u1 = f.ua + (span - du) / 2, u2 = u1 + du;
+      /** @param {number} u @param {number} v @returns {Pt} */
       const at = (u, v) => (f.ax ? [v, u] : [u, v]);
       poly = [rot[0], at(u1, f.v1), at(u2, f.v2), ...rot.slice(1, j + 1).reverse(), at(u2, f.v1), at(u1, f.v2), ...rot.slice(j + 1)];
       crossed = true;
@@ -137,6 +170,7 @@ export function generateLayout (seed, size = 4, opts = {}) {
   // CHICANAS. En una recta larga, la pista se desvía a un lado y vuelve. Solo si el desvío
   // cabe: dentro de la cuadrícula y sin acercarse a ningún otro tramo.
   const PX = [(W - 104) / CELLS, (H - 108) / CELLS];             // una casilla, en px (ver FX/FY)
+  /** @param {Pt} p @param {Pt} a @param {Pt} b */
   const distSeg = (p, a, b) => {
     const vx = (b[0] - a[0]) * PX[0], vy = (b[1] - a[1]) * PX[1], wx = (p[0] - a[0]) * PX[0], wy = (p[1] - a[1]) * PX[1];
     const t = Math.max(0, Math.min(1, (wx * vx + wy * vy) / (vx * vx + vy * vy || 1)));
@@ -158,6 +192,7 @@ export function generateLayout (seed, size = 4, opts = {}) {
       if (placed) break;
       const mid = mid0 + dir * sh;
       const v = A[1 - ax] + side * off;
+      /** @param {number} u @param {number} w @returns {Pt} */
       const pt = (u, w) => (ax ? [w, u] : [u, w]);
       // Un desvío CUADRADO (dos lados perpendiculares y el tramo de fuera): con la pista tan
       // ancha, una zeta corta dejaba sus dos diagonales a menos de una pista de ancho.
@@ -181,7 +216,11 @@ export function generateLayout (seed, size = 4, opts = {}) {
 // trazada: el camino por el que se mide el avance y por el que conduce la máquina.
 const CORNER_R = 30;
 
-/** PRNG determinista (mulberry32). */
+/**
+ * PRNG determinista (mulberry32).
+ * @param {number} seed
+ * @returns {() => number} [0, 1)
+ */
 export function rng (seed) {
   let a = seed >>> 0;
   return () => {
@@ -193,9 +232,14 @@ export function rng (seed) {
   };
 }
 
-/** El polígono con las esquinas redondeadas, como lista densa de puntos. Empieza a media recta del primer lado. */
+/**
+ * El polígono con las esquinas redondeadas, como lista densa de puntos. Empieza a media recta del primer lado.
+ * @param {Pt[]} pts
+ * @returns {Pt[]}
+ */
 function roundedLoop (pts) {
   const n = pts.length;
+  /** @type {{ p1: Pt, p2: Pt, arc: { c: Pt, r: number } | null }[]} */
   const corners = pts.map((B, i) => {
     const A = pts[(i + n - 1) % n], C = pts[(i + 1) % n];
     const ul = Math.hypot(A[0] - B[0], A[1] - B[1]), vl = Math.hypot(C[0] - B[0], C[1] - B[1]);
@@ -224,7 +268,11 @@ function roundedLoop (pts) {
   return out;
 }
 
-/** Muestras del eje, equiespaciadas por longitud de arco. La muestra 0 es la línea de salida. */
+/**
+ * Muestras del eje, equiespaciadas por longitud de arco. La muestra 0 es la línea de salida.
+ * @param {Pt[]} pts
+ * @returns {Sample[]}
+ */
 function sampleLoop (pts) {
   const loop = roundedLoop(pts);
   // Longitudes acumuladas
@@ -247,6 +295,7 @@ function sampleLoop (pts) {
   return out;
 }
 
+/** @param {Sample[]} s */
 function finishSamples (s) {
   const n = s.length;
   for (let i = 0; i < n; i++) {
@@ -269,6 +318,15 @@ function finishSamples (s) {
  * recta no deja costura. `cap`: si ya se sabe que no baja de ahí, se deja.
  */
 const OCT = Math.SQRT1_2;
+/**
+ * @param {number} px
+ * @param {number} py
+ * @param {Pt} a
+ * @param {Pt} b
+ * @param {number} cap
+ * @param {number} style 0 redonda, 1 a 45°
+ * @returns {number}
+ */
 function segDist (px, py, a, b, cap, style) {
   // Cota rápida: lo que falta hasta la caja del segmento.
   const lx = Math.max(Math.min(a[0], b[0]) - px, px - Math.max(a[0], b[0]), 0);
@@ -280,6 +338,7 @@ function segDist (px, py, a, b, cap, style) {
     const t = Math.max(0, Math.min(1, -(ax * bx + ay * by) / (bx * bx + by * by || 1)));
     return Math.min(cap, Math.hypot(ax + bx * t, ay + by * t));
   }
+  /** @param {number} t */
   const g = (t) => {
     const u = Math.abs(ax + bx * t), v = Math.abs(ay + by * t);
     return style === 0 ? Math.hypot(u, v) : Math.max(u, v, (u + v) * OCT);
@@ -298,6 +357,12 @@ function segDist (px, py, a, b, cap, style) {
  * esquina que tiene más cerca (`styles`), así que en una misma pista hay esquinas en arco y
  * cortadas a 45°. Los picos que queden los lima después `smoothCorners`. `near`: en qué punto de la trazada cae cada punto (muestra con decimales).
  */
+/**
+ * @param {Sample[]} s
+ * @param {Pt[]} poly
+ * @param {number[]} styles
+ * @returns {{ field: Float32Array, near: Float32Array }}
+ */
 function buildField (s, poly, styles) {
   const n = s.length, m = poly.length;
   const field = new Float32Array(W * H);
@@ -306,8 +371,9 @@ function buildField (s, poly, styles) {
   // punto basta mirar su casilla y las ocho vecinas. `near` solo hace falta dentro de la
   // pista y junto a la valla (NEAR_BAND cubre lo que smoothCorners pueda rellenar).
   const CELL = 64, NEAR_BAND = HALF + 16, cw = Math.ceil(W / CELL) + 2, ch = Math.ceil(H / CELL) + 2;
-  const cells = Array.from({ length: cw * ch }, () => []);
+  const cells = Array.from({ length: cw * ch }, () => /** @type {number[]} */ ([]));
   for (let i = 0; i < n; i++) cells[(Math.floor(s[i].y / CELL) + 1) * cw + Math.floor(s[i].x / CELL) + 1].push(i);
+  /** @param {number} x @param {number} y @param {number[]} list */
   const nearest = (x, y, list) => {
     let best = 1e9, bn = 0;
     for (const i of list) {
@@ -322,7 +388,9 @@ function buildField (s, poly, styles) {
     }
     return bn;
   };
-  const all = Array.from({ length: n }, (_, i) => i), around = [];
+  /** @type {number[]} */
+  const around = [];
+  const all = Array.from({ length: n }, (_, i) => i);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       let box = 1e9;
@@ -342,10 +410,15 @@ function buildField (s, poly, styles) {
   return { field, near };
 }
 
-/** Distancia de cada punto al punto marcado más cercano (transformada exacta, dos pasadas 1D). */
+/**
+ * Distancia de cada punto al punto marcado más cercano (transformada exacta, dos pasadas 1D).
+ * @param {ArrayLike<number>} mask
+ * @returns {Float32Array}
+ */
 function distanceTo (mask) {
   const INF = 1e12, out = new Float32Array(W * H);
   const size = Math.max(W, H), f = new Float64Array(size), d = new Float64Array(size), v = new Int32Array(size), z = new Float64Array(size + 1);
+  /** @param {number} len */
   const pass = (len) => {
     let k = 0; v[0] = 0; z[0] = -INF; z[1] = INF;
     for (let q = 1; q < len; q++) {
@@ -377,10 +450,14 @@ function distanceTo (mask) {
  * distancia a la valla resultante.
  */
 const CORNER_ARC = 9;
+/** @param {Float32Array} field */
 function smoothCorners (field) {
   const N = W * H, r = CORNER_ARC;
+  /** @param {Uint8Array} mask @param {number} by */
   const grow = (mask, by) => { const d = distanceTo(mask), o = new Uint8Array(N); for (let i = 0; i < N; i++) o[i] = d[i] <= by ? 1 : 0; return o; };
+  /** @param {Uint8Array} mask */
   const not = (mask) => { const o = new Uint8Array(N); for (let i = 0; i < N; i++) o[i] = mask[i] ? 0 : 1; return o; };
+  /** @param {Uint8Array} mask @param {number} by */
   const shrink = (mask, by) => not(grow(not(mask), by));
   let track = new Uint8Array(N);
   for (let i = 0; i < N; i++) track[i] = field[i] < HALF ? 1 : 0;
@@ -408,10 +485,18 @@ function smoothCorners (field) {
  * ahí los dos tramos se pisan de verdad (el punto queda cerca de los dos ejes).
  */
 const SEAM_GAP = 20;
+/**
+ * @param {Float32Array} field
+ * @param {Float32Array} near
+ * @param {Sample[]} s
+ * @param {Uint8Array} ledge
+ * @returns {Uint8Array}
+ */
 function fenceSeams (field, near, s, ledge) {
   const n = s.length;
   const mask = new Uint8Array(W * H);
   let any = 0;
+  /** @param {number} a @param {number} b */
   const loopDist = (a, b) => { const d = Math.abs(a - b) % n; return Math.min(d, n - d); };
   for (let y = 0; y < H - 1; y++) {
     for (let x = 0; x < W - 1; x++) {
@@ -442,8 +527,13 @@ function fenceSeams (field, near, s, ledge) {
   return mask;
 }
 
-/** Solo el eje de la pista (para la miniatura del mapa): sin campo ni alturas, cuesta nada. */
+/**
+ * Solo el eje de la pista (para la miniatura del mapa): sin campo ni alturas, cuesta nada.
+ * @param {TrackSpec} spec
+ * @returns {Sample[]}
+ */
 export function trackOutline (spec) {
+  /** @type {Layout} */
   const layout = spec.layout != null
     ? LAYOUTS[spec.layout % LAYOUTS.length]
     : { name: 'gen', pts: generateLayout(spec.seed, spec.size, { cross: spec.cross, chicane: spec.chicane }) };
@@ -455,8 +545,10 @@ export function trackOutline (spec) {
   return samples;
 }
 
+/** @param {TrackSpec} spec */
 export function buildTrack (spec) {
   // Con `layout`, uno de los trazados dibujados a mano; sin él, una pista por piezas de su semilla.
+  /** @type {Layout} */
   const layout = spec.layout != null
     ? LAYOUTS[spec.layout % LAYOUTS.length]
     : { name: 'gen', pts: generateLayout(spec.seed, spec.size, { cross: spec.cross, chicane: spec.chicane }) };
@@ -474,6 +566,7 @@ export function buildTrack (spec) {
   // horizontales o verticales; junto a una diagonal va en arco, que es la única medida que no
   // ensancha la diagonal.
   const styleRand = rng((spec.seed ^ 0xc0ffee) >>> 0);
+  /** @param {Pt} a @param {Pt} b */
   const straight = (a, b) => Math.abs(a[0] - b[0]) < 1 || Math.abs(a[1] - b[1]) < 1;
   const corners = pts.map((p, k) => {
     const r = styleRand();
@@ -490,8 +583,12 @@ export function buildTrack (spec) {
   // encajan, con su talud vertical por fuera.
   const m = pts.length, maxLevel = spec.maxLevel ?? 3;
   const vIdx = pts.map(p => { let b = 0, bd = 1e9; for (let i = 0; i < n; i++) { const d = Math.hypot(samples[i].x - p[0], samples[i].y - p[1]); if (d < bd) { bd = d; b = i; } } return b; });
+  /** @param {number} k */
   const elen = (k) => Math.hypot(pts[(k + 1) % m][0] - pts[k][0], pts[(k + 1) % m][1] - pts[k][1]);
-  const lv = new Array(m).fill(0), pinned = new Array(m).fill(false);
+  /** @type {number[]} */
+  const lv = new Array(m).fill(0);
+  /** @type {boolean[]} */
+  const pinned = new Array(m).fill(false);
   pinned[0] = pinned[1] = true;                                  // la recta de salida, a nivel del suelo
   for (let k = 0; k < m; k++) {                                  // y las diagonales de un cruce
     const a = pts[k], b = pts[(k + 1) % m];
@@ -508,6 +605,7 @@ export function buildTrack (spec) {
     return th > Math.PI - 0.05 ? 0 : Math.min(CORNER_R / Math.tan(th / 2), 0.47 * Math.min(ul, vl));
   });
   const MARGIN = 4;                                                // la rampa no toca el arco
+  /** @param {number} k */
   const usable = (k) => elen(k) - tanLen[k] - tanLen[(k + 1) % m] - 2 * MARGIN;
   // Dos piezas que se tocan DE LADO sin ser tramos seguidos (la pista pasa pegada a sí misma)
   // pueden ir a distinto piso: entre ellas queda un MURO de contención con su valla (`ledge`),
@@ -536,11 +634,13 @@ export function buildTrack (spec) {
       if (hi - lo > 1 && (lv[b] > lv[a] || usable(k) < 32)) { if (lv[a] === hi) lv[a] = lo + 1; else lv[b] = lo + 1; changed = true; }
     }
   }
+  /** @param {number} u */
   const sm = (u) => { u = u < 0 ? 0 : u > 1 ? 1 : u; return u * u * (3 - 2 * u); };
   const isDrop = pts.map((_, k) => { const a = lv[k], b = lv[(k + 1) % m]; return b < a && (b < a - 1 || rand() < 0.55); });
   const dirs = pts.map((p, k) => { const q = pts[(k + 1) % m], L = elen(k) || 1; return [(q[0] - p[0]) / L, (q[1] - p[1]) / L]; });
   // Altura de la pieza k a `u` píxeles de su esquina de entrada, uniforme a lo ancho. Fuera de
   // la parte recta vale lo de la esquina que toca, que es lo que vale el arco.
+  /** @param {number} k */
   const rampLen = (k) => {
     const a = lv[k], b = lv[(k + 1) % m], S = usable(k);
     // Ningún desnivel pasa de 45°: la bajada brusca es una rampa a 45° justos (lo que baja es
@@ -548,7 +648,9 @@ export function buildTrack (spec) {
     // Con menos de 24 px de recta la rampa va lineal a 45° justos; con más, suave (tendida).
     return isDrop[k] || S < 24 ? Math.min(S, Math.abs(a - b) * LEVEL_H) : Math.min(S, Math.max(24, S * 0.4));
   };
+  /** @param {number} k */
   const isLinear = (k) => isDrop[k] || usable(k) < 24;
+  /** @param {number} k @param {number} u */
   const pieceH = (k, u) => {
     const a = lv[k], b = lv[(k + 1) % m];
     if (a === b) return LEVEL_H * a;
@@ -556,6 +658,7 @@ export function buildTrack (spec) {
     const t = Math.max(0, Math.min(1, (u - ((s0 + s1) / 2 - len / 2)) / len));
     return LEVEL_H * (a + (b - a) * (isLinear(k) ? t : sm(t)));
   };
+  /** @param {number} k @param {number} x @param {number} y */
   const along = (k, x, y) => (x - pts[k][0]) * dirs[k][0] + (y - pts[k][1]) * dirs[k][1];
   // Pieza de cada muestra del eje: de la esquina k a la k+1.
   const segOf = new Int32Array(n);
@@ -565,6 +668,7 @@ export function buildTrack (spec) {
   }
   const level = new Float32Array(n);
   for (let i = 0; i < n; i++) level[i] = pieceH(segOf[i], along(segOf[i], samples[i].x, samples[i].y));
+  /** @type {number[]} */
   const drops = [];
   for (let k = 0; k < m; k++) {
     if (!isDrop[k]) continue;
@@ -574,33 +678,40 @@ export function buildTrack (spec) {
   const levels = lv;
   // Un obstáculo nunca se pone donde cambia el piso (ni justo antes ni justo después): dos
   // desniveles sumados pasarían de 45° y el filo de un corte quedaría mellado.
+  /** @param {number} i @param {number} m */
   const onSlope = (i, m) => {
     for (let o = -m; o <= m; o++) if (Math.abs(level[(i + o + n) % n] - level[(i + o + 1 + n) % n]) > 0.05) return true;
     return false;
   };
   // Si en las m muestras ANTERIORES a i cambia el piso: ahí se aterriza de lo que se voló en
   // la cresta de la subida o al salir de la bajada.
+  /** @param {number} i @param {number} m */
   const afterSlope = (i, m) => {
     for (let o = 1; o <= m; o++) if (Math.abs(level[(i - o + n) % n] - level[(i - o + 1 + n) % n]) > 0.05) return true;
     return false;
   };
 
   // Lomas: en tramos rectos, lejos de la salida y separadas entre sí.
+  /** @param {number} a @param {number} b */
   const circ = (a, b) => Math.min(Math.abs(a - b), n - Math.abs(a - b));
   // Cruces (el ocho, la espiral): ahí el suelo es de dos tramos a la vez, así que va plano.
+  /** @type {number[]} */
   const cross = [];
   for (let i = 0; i < n; i++) {
     for (let j = i + 17; j < n; j++) {
       if (circ(i, j) > 16 && Math.hypot(samples[i].x - samples[j].x, samples[i].y - samples[j].y) < HALF * 1.3) { cross.push(i, j); }
     }
   }
+  /** @param {number} i @param {number} m */
   const nearCross = (i, m) => cross.some(c => circ(c, i) < m);
   // Rampas: una subida larga que acaba en un borde cortado, en plena recta. A velocidad, la
   // camioneta sale volando y cae bastante más allá (la física del salto está en sim.js).
+  /** @type {number[]} */
   const ramps = [];
   const wantRamps = spec.ramps ?? 1;
   // Se puntúa cada sitio posible por lo recto que es su tramo (la subida y la caída) y se
   // elige al azar entre los rectos; si el trazado no tiene ninguno, vale el menos curvo.
+  /** @type {{ i: number, worst: number }[]} */
   const spots = [];
   for (let i = RAMP_LEN + 4; i < n - 30; i++) {
     if (nearCross(i, 24) || onSlope(i, RAMP_LEN + 6)) continue;
@@ -617,6 +728,7 @@ export function buildTrack (spec) {
       if (best) ramps.push(best.i);          // sin recta larga: el tramo menos curvo que haya
     }
   }
+  /** @param {number} i @param {number} m */
   const onRamp = (i, m) => ramps.some(r => { const c = (r - i + n) % n; return c <= RAMP_LEN + m || n - c <= 22 + m; });
   // RAMPAS CON OBSTÁCULOS. Cada rampa lleva `rampObs` adornos de este menú (sin repetir):
   //   gap    — una ZANJA justo después del borde: a velocidad se vuela por encima; despacio
@@ -624,9 +736,12 @@ export function buildTrack (spec) {
   //   gate   — dos ROCAS en la subida, una a cada lado: hay que entrar por el medio.
   //   whoops — el ONDULADO justo antes de la subida: se llega dando botes.
   //   crater — un CRÁTER a un lado del aterrizaje: aterrizar torcido cuesta.
+  /** @type {RampFx[]} */
   const RAMP_MENU = spec.rampMenu || ['gap', 'gate', 'whoops', 'crater'];
   const rampFx = ramps.map(r => {
-    const pool = RAMP_MENU.slice(), picked = [];
+    /** @type {RampFx[]} */
+    const picked = [];
+    const pool = RAMP_MENU.slice();
     for (let k = 0; k < (spec.rampObs ?? 0) && pool.length; k++) {
       const f = pool.splice(Math.floor(rand() * pool.length), 1)[0];
       picked.push(f);
@@ -636,6 +751,7 @@ export function buildTrack (spec) {
     return { r, fx: picked };
   });
 
+  /** @type {number[]} */
   const bumps = [];
   const wantBumps = spec.bumps ?? 3;
   for (let tries = 0; tries < 200 && bumps.length < wantBumps; tries++) {
@@ -647,6 +763,7 @@ export function buildTrack (spec) {
   bumps.sort((a, b) => a - b);
 
   // Cuestas: subidas largas y suaves. Frenan al subir y lanzan al bajar.
+  /** @type {Hill[]} */
   const hills = [];
   const wantHills = spec.hills ?? 1;
   for (let tries = 0; tries < 200 && hills.length < wantHills; tries++) {
@@ -655,8 +772,10 @@ export function buildTrack (spec) {
     hills.push({ i, h: 7 + rand() * 3, s: 8 + rand() * 3 });   // bajas: una loma alta tapa la valla de detrás
   }
 
+  /** @param {number} i @param {number} len */
   const straightAt = (i, len) => { for (let o = 0; o <= len; o++) if (samples[(i + o) % n].curv > 0.25) return false; return true; };
   // Ondulado: tres resaltos seguidos.
+  /** @type {number[]} */
   const whoops = [];
   // El ondulado de una rampa va justo antes de la subida, solo si ese tramo es llano y recto
   // (sobre una bajada de piso sumaba las dos pendientes).
@@ -670,6 +789,7 @@ export function buildTrack (spec) {
     whoops.push(i);
   }
   // Montículos: no ocupan todo el ancho; el que lo pisa salta, el que lo esquiva no.
+  /** @type {Mound[]} */
   const mounds = [];
   for (let tries = 0; tries < 300 && mounds.length < (spec.mounds ?? 2); tries++) {
     const i = 16 + Math.floor(rand() * (n - 32));
@@ -800,6 +920,7 @@ export function buildTrack (spec) {
   }
 
   // Charcos: círculos a un lado del eje (se pueden esquivar).
+  /** @type {Puddle[]} */
   const puddles = [];
   const wantPuddles = spec.puddles ?? 2;
   for (let tries = 0; tries < 200 && puddles.length < wantPuddles; tries++) {
@@ -817,14 +938,23 @@ export function buildTrack (spec) {
   // (más ancho y menos hondo) y ZANJA (atraviesa la pista de valla a valla, de borde ondulado).
   // Cada uno lleva su máscara de profundidad por píxel (`dep`), que es lo que se resta a la
   // altura y lo que usa el pintado: forma, pared y sombra salen de la misma geometría.
+  /** @type {Pit[]} */
   const pits = [];
+  /**
+   * @param {Sample} q
+   * @param {import('./types').PitType} type
+   * @param {number} lat
+   * @returns {Pit} sin `i` ni `lat` de verdad hasta que quien lo pide los pone
+   */
   const mkPit = (q, type, lat) => {
     const ph = [rand() * 6.3, rand() * 6.3, rand() * 6.3];
-    const pt = type === 'trench'
+    // El resto de campos (caja, máscara, fondo; `i` y `lat` los pone quien lo pide) se
+    // rellena justo debajo.
+    const pt = /** @type {Pit} */ (type === 'trench'
       ? { type, x: q.x, y: q.y, rx: 6 + rand() * 2.5, ry: HALF, d: 6 }
       : type === 'crater'
         ? { type, x: q.x - q.ty * lat, y: q.y + q.tx * lat, rx: 15 + rand() * 4, ry: 11 + rand() * 3, d: 5 }
-        : { type, x: q.x - q.ty * lat, y: q.y + q.tx * lat, rx: 10 + rand() * 5, ry: 8 + rand() * 3, d: 6 };
+        : { type, x: q.x - q.ty * lat, y: q.y + q.tx * lat, rx: 10 + rand() * 5, ry: 8 + rand() * 3, d: 6 });
     const R = Math.ceil(Math.max(pt.rx, pt.ry) * 1.3) + 3;
     pt.x0 = Math.max(0, Math.floor(pt.x - R)); pt.y0 = Math.max(0, Math.floor(pt.y - R));
     pt.w = Math.min(W - 1, Math.ceil(pt.x + R)) - pt.x0 + 1; pt.h = Math.min(H - 1, Math.ceil(pt.y + R)) - pt.y0 + 1;
@@ -866,7 +996,9 @@ export function buildTrack (spec) {
     const i = 14 + Math.floor(rand() * (n - 50));          // tampoco en la parrilla de salida
     if (nearCross(i, 12) || onRamp(i, 6) || onSlope(i, 8) || samples[i].curv > 0.3) continue;
     if (bumps.some(b => circ(b, i) < 8) || mounds.some(m => circ(m.i, i) < 9) || whoops.some(w => circ(w + 5, i) < 12)) continue;
-    const r = rand(), type = r < 0.3 ? 'trench' : r < 0.5 ? 'crater' : 'hole';
+    const r = rand();
+    /** @type {import('./types').PitType} */
+    const type = r < 0.3 ? 'trench' : r < 0.5 ? 'crater' : 'hole';
     const q = samples[i], lat = (rand() < 0.5 ? -1 : 1) * (7 + rand() * 14);
     const pt = { x: type === 'trench' ? q.x : q.x - q.ty * lat, y: type === 'trench' ? q.y : q.y + q.tx * lat, rx: type === 'trench' ? 9 : type === 'crater' ? 19 : 15 };
     if (type !== 'trench' && field[Math.round(pt.y) * W + Math.round(pt.x)] > HALF - pt.rx - 2) continue;
@@ -884,6 +1016,7 @@ export function buildTrack (spec) {
   }
 
   // Rocas: obstáculos SÓLIDOS a un lado del eje. Se rodean (o se saltan desde una rampa).
+  /** @type {Rock[]} */
   const rocks = [];
   for (const { r, fx } of rampFx) if (fx.includes('gate')) {
     const i = (r - 5 + n) % n, q = samples[i];
@@ -911,9 +1044,16 @@ export function buildTrack (spec) {
   }
 
   return { spec, name: layout.name, samples, n, field, near, seam, height, ledge, bumps, ramps, hills, puddles, whoops, mounds, rocks, pits, levels, level, drops, corners, half: HALF,
-    crossed: !!(/** @type {any} */ (layout.pts)).crossed, chicanes: (/** @type {any} */ (layout.pts)).chicanes || 0 };
+    crossed: !!layout.pts.crossed, chicanes: layout.pts.chicanes || 0 };
 }
 
+/**
+ * @param {Float32Array} f
+ * @param {number} x
+ * @param {number} y
+ * @param {number} out lo que vale fuera del cuadro
+ * @returns {number}
+ */
 function sample (f, x, y, out) {
   if (x < 0 || y < 0 || x >= W - 1 || y >= H - 1) return out;
   const x0 = x | 0, y0 = y | 0, fx = x - x0, fy = y - y0;
@@ -922,14 +1062,33 @@ function sample (f, x, y, out) {
   const b = f[i + W] + (f[i + W + 1] - f[i + W]) * fx;
   return a + (b - a) * fy;
 }
-/** Distancia al eje en un punto cualquiera (bilineal sobre el campo). Fuera del cuadro: lejos. */
+/**
+ * Distancia al eje en un punto cualquiera (bilineal sobre el campo). Fuera del cuadro: lejos.
+ * @param {{ field: Float32Array }} track
+ * @param {number} x
+ * @param {number} y
+ * @returns {number}
+ */
 export const distAt = (track, x, y) => sample(track.field, x, y, 999);
-/** Altura del suelo en un punto cualquiera. */
+/**
+ * Altura del suelo en un punto cualquiera.
+ * @param {{ height: Float32Array }} track
+ * @param {number} x
+ * @param {number} y
+ * @returns {number}
+ */
 export const heightAt = (track, x, y) => sample(track.height, x, y, 0);
 /**
  * Si el segmento (x1,y1)→(x2,y2) cruza un muro entre piezas: pasa del lado alto (`ledge` 2)
  * al bajo (1) o al revés. Se mira píxel a píxel, así que no se salta la franja a ninguna
  * velocidad.
+ *
+ * @param {{ ledge: Uint8Array }} track
+ * @param {number} x1
+ * @param {number} y1
+ * @param {number} x2
+ * @param {number} y2
+ * @returns {boolean}
  */
 export function crossesLedge (track, x1, y1, x2, y2) {
   const L = Math.hypot(x2 - x1, y2 - y1), steps = Math.max(1, Math.ceil(L));

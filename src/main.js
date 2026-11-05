@@ -19,6 +19,20 @@ import '@dotrino/install';
 import '@dotrino/share';
 import '@dotrino/topbar';    // barra superior estándar del ecosistema (§5)
 
+/**
+ * @typedef {import('./types').MapNode} MapNode
+ * @typedef {import('./types').CampaignNode} CampaignNode
+ * @typedef {import('./types').EndlessNode} EndlessNode
+ * @typedef {import('./types').Progress} Progress
+ * @typedef {import('./types').NodeProgress} NodeProgress
+ * @typedef {import('./types').TruckSetup} TruckSetup
+ * @typedef {import('./types').RaceResult} RaceResult
+ * @typedef {import('./types').Sample} Sample
+ * @typedef {RaceResult & { stars: number, prize: number, picked: number, openedRegion: number | null, roundLost?: boolean }} ShownResult
+ * @typedef {{ rows: string[], colors: Record<string, string> }} PixelArt
+ */
+
+/** @param {string} p @param {string} [fill] */
 const SVG = (p, fill) => `<svg viewBox="0 0 24 24" width="22" height="22" fill="${fill || 'none'}" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 const IC = {
   star: SVG('<path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 9.5l6.9-.6z"/>', 'currentColor'),
@@ -30,7 +44,10 @@ const IC = {
 };
 
 // ---------- Estado ----------
-const app = document.getElementById('app');
+const appEl = document.getElementById('app');
+// Sin el contenedor no hay dónde pintar nada: se para aquí, con su nombre.
+if (!appEl) throw new Error('offroad: #app element missing');
+const app = appEl;
 const screen = h('div', { class: 'screen' });
 const toastEl = h('div', { class: 'toast', role: 'status' });
 const sprites = makeSprites();
@@ -75,13 +92,23 @@ topbar.addEventListener('dotrino-lang', (e) => {
 });
 
 /** Avance: { nodes:{[id]:{done,stars,bestMs,shared}}, money, nitro, up:{tires,shocks,accel,speed} } */
+/** @type {Progress} */
 let progress = { nodes: {}, money: START.money, nitro: START.nitro, up: { ...START.up }, endless: { round: 0, best: 0 } };
-let view = 'map';              // 'map' | 'garage' | 'race'
+/** @type {'map' | 'garage' | 'race'} */
+let view = 'map';
+/** @type {{ node: MapNode, shared: boolean, handle: ReturnType<typeof startRace> } | null} */
 let current = null;            // carrera en curso: { node, shared, handle }
+/** @type {import('@dotrino/nav').BackLayerHandle | null} */
 let layer = null;              // capa de "volver" abierta (carrera o taller)
+/** @type {string | null} */
 let shareNodeId = null;        // carrera que se está compartiendo (para la recompensa)
 
-let toastTimer = 0;
+/** @type {ReturnType<typeof setTimeout> | undefined} */
+let toastTimer;
+/**
+ * @param {string} msg
+ * @param {number} [ms]
+ */
 function showToast (msg, ms = 2600) {
   toastEl.textContent = msg; toastEl.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('show'), ms);
@@ -92,6 +119,7 @@ function persist () {
   saveProgress(progress).catch(e => { console.error('[offroad] could not save progress', e); showToast('⚠ ' + t('storeProblem'), 6000); });
 }
 function closeLayer () { if (layer) { const l = layer; layer = null; l.close(); } }
+/** @param {number} n @param {string} cls */
 const starRow = (n, cls) => {
   const row = h('div', { class: cls });
   for (let k = 1; k <= 3; k++) row.append(h('span', { class: 'ns' + (k <= n ? ' on' : ''), html: IC.star }));
@@ -105,11 +133,14 @@ const starRow = (n, cls) => {
 // nieve y volcán hacia arriba), caminos de tierra entre carreras y una casilla biselada con la
 // miniatura del trazado por carrera, como la «start next race» del original.
 const MAP_W = 324, ROW_H = 102, PAD_Y = 60, SCALE = 3, T_NORM = 58, T_BOSS = 70;
+/** @type {Record<'lock' | 'crown', PixelArt>} */
 const PX = {
   lock: { rows: ['.kkk.', 'k...k', 'k...k', 'ggggg', 'gyyyg', 'gyyyg', 'ggggg'], colors: { k: '#1d1206', g: '#8a6a40', y: '#1d1206' } },
   crown: { rows: ['y...y...y', 'yy.yyy.yy', 'yyyyyyyyy', 'yyyyyyyyy', '.yyyyyyy.'], colors: { y: '#fbbf24' } },
 };
+/** @type {Record<string, Sample[]>} */
 const thumbs = {};
+/** @param {MapNode} n */
 const thumbFor = (n) => (thumbs[n.id] ||= trackOutline(n.race));
 
 function renderMap () {
@@ -146,6 +177,7 @@ function renderMap () {
 // En pantallas anchas el mapa va APAISADO: las regiones de izquierda a derecha, a todo el
 // ancho; en el teléfono, de abajo arriba.
 const isWide = () => window.innerWidth >= 900 && window.innerWidth > window.innerHeight;
+/** @type {boolean | null} */
 let mapWide = null;
 window.addEventListener('resize', () => { if (view === 'map' && mapWide !== null && mapWide !== isWide()) renderMap(); });
 
@@ -159,24 +191,30 @@ function renderMapGraph () {
   const width = wide ? PAD_Y * 2 + (rows - 1) * step : MAP_W;
   const height = wide ? Math.max(400, Math.min(560, window.innerHeight - 330)) : PAD_Y * 2 + (rows - 1) * step;
   // Posición de cada carrera: la primera queda abajo (o a la izquierda).
+  /** @param {CampaignNode} n */
   const cx = n => wide ? PAD_Y + n.row * step : n.x * MAP_W;
+  /** @param {CampaignNode} n */
   const cy = n => wide ? 40 + (1 - n.x) * (height - 110) + 30 : PAD_Y + (rows - 1 - n.row) * step;
+  /** @param {CampaignNode} n */
   const along = n => wide ? cx(n) : cy(n);
 
   // Terreno: una franja por región; el borde entre dos queda a medio camino entre el jefe de
   // una y la entrada de la siguiente. Apaisado las franjas van de izquierda a derecha.
+  /** @type {{ key: string, end: number }[]} */
   const bands = [];
   const order = wide ? [...regions().keys()] : [...regions().keys()].reverse();
   for (const ri of order) {
-    const entry = nodes.find(n => n.region === ri), nextEntry = nodes.find(n => n.region === ri + 1);
-    const boss = nodes.findLast(n => n.region === ri), prevBoss = nodes.findLast(n => n.region === ri - 1);
+    // Toda región tiene su entrada y su jefe (levels.js las arma de seis en seis).
+    const entry = /** @type {CampaignNode} */ (nodes.find(n => n.region === ri)), nextEntry = nodes.find(n => n.region === ri + 1);
+    const boss = /** @type {CampaignNode} */ (nodes.findLast(n => n.region === ri)), prevBoss = nodes.findLast(n => n.region === ri - 1);
     let end;
     if (wide) end = nextEntry ? (along(boss) + along(nextEntry)) / 2 : width;
     else end = prevBoss ? (along(entry) + along(prevBoss)) / 2 : height;
     bands.push({ key: regionKey(ri), end: end / SCALE });
   }
   const trails = edges().map(([a, b]) => {
-    const na = nodeById(a), nb = nodeById(b);
+    // Las aristas salen de los propios nodos: los dos existen.
+    const na = /** @type {CampaignNode} */ (nodeById(a)), nb = /** @type {CampaignNode} */ (nodeById(b));
     const on = isDone(progress, a) && (isDone(progress, b) || isUnlocked(progress, b));
     return { x1: cx(na) / SCALE, y1: cy(na) / SCALE, x2: cx(nb) / SCALE, y2: cy(nb) / SCALE, on };
   });
@@ -235,20 +273,30 @@ function renderMapGraph () {
 // =====================================================================
 //  Carrera
 // =====================================================================
-/** Una ronda del sin fin en la pista de esa semilla (o en una nueva), en la ronda dada o en la tuya. */
+let randomHelpShown = false;
+/**
+ * Una ronda del sin fin en la pista de esa semilla (o en una nueva), en la ronda dada o en la tuya.
+ * @param {number} [seed]
+ * @param {number} [round]
+ */
 function startRandom (seed, round) {
   const s = seed || (1 + Math.floor(Math.random() * 0x7ffffffe));
-  if (!startRandom.told) { startRandom.told = true; showToast(t('randomHelp'), 6000); }
+  if (!randomHelpShown) { randomHelpShown = true; showToast(t('randomHelp'), 6000); }
   startNode(null, { node: randomNode(s, progress.up, round ?? progress.endless.round) });
 }
 
+/**
+ * @param {string | null} id carrera del mapa (null con `opts.node`)
+ * @param {{ node?: MapNode, shared?: boolean }} [opts]
+ */
 function startNode (id, opts = {}) {
   const n = opts.node || nodeById(id);
   if (!n) return;
   const loose = n.type === 'random';
-  const unlocked = loose || isUnlocked(progress, id);
+  // Sin `opts.node`, `n` es el nodo de `id`: n.id === id.
+  const unlocked = loose || isUnlocked(progress, n.id);
   if (!unlocked && !opts.shared) {
-    const miss = starsMissing(progress, id);
+    const miss = starsMissing(progress, n.id);
     showToast(miss > 0 ? t('needStars', { n: miss }) : t('needPrev'));
     return;
   }
@@ -257,6 +305,7 @@ function startNode (id, opts = {}) {
   const shared = !unlocked;
   audio.unlock();
   const L = n.race.level;
+  /** @type {TruckSetup} */
   const player = shared
     ? { ai: false, color: 'red', up: { tires: L, shocks: L, accel: L, speed: L }, nitro: 3 }
     : { ai: false, color: 'red', up: { ...progress.up }, nitro: progress.nitro };
@@ -269,7 +318,7 @@ function startNode (id, opts = {}) {
   view = 'race';
   document.body.classList.add('mode-race');
   clear(screen);
-  const title = (loose ? t('randomTrack') + ' · ' + t('round', { n: n.round + 1 }) : n.type === 'boss' ? t('boss') : t('race') + ' ' + n.label) + ' · ' + t(regionKey(n.region));
+  const title = (n.type === 'random' ? t('randomTrack') + ' · ' + t('round', { n: n.round + 1 }) : n.type === 'boss' ? t('boss') : t('race') + ' ' + n.label) + ' · ' + t(regionKey(n.region));
   const handle = startRace({
     host: screen, spec: n.race, region: regionKey(n.region), sprites, title,
     trucks: [player, ...rivalsFor(n)],
@@ -280,6 +329,11 @@ function startNode (id, opts = {}) {
   if (shared) showToast(t('sharedIntro'), 4200);
 }
 
+/**
+ * @param {MapNode} node
+ * @param {boolean} shared
+ * @param {RaceResult} res
+ */
 function onRaceEnd (node, shared, res) {
   const place = res.place;
   if (node.type === 'random') {
@@ -303,6 +357,7 @@ function onRaceEnd (node, shared, res) {
   let openedRegion = null;
   if (!shared) {
     const before = allNodes().filter(x => isUnlocked(progress, x.id)).map(x => x.id);
+    /** @type {NodeProgress} */
     const prev = progress.nodes[node.id] || {};
     progress.money += prize + picked;
     progress.nitro = res.nitroLeft;
@@ -320,6 +375,11 @@ function onRaceEnd (node, shared, res) {
   showResult(node, shared, { ...res, stars, prize, picked, openedRegion });
 }
 
+/**
+ * @param {MapNode} node
+ * @param {boolean} shared
+ * @param {ShownResult} r
+ */
 function showResult (node, shared, r) {
   const won = r.stars > 0;
   const loose = node.type === 'random';
@@ -342,10 +402,10 @@ function showResult (node, shared, r) {
       starRow(r.stars, 'win-stars'),
       meta,
       r.openedRegion != null ? h('div', { class: 'region-open' }, t('regionUnlocked', { r: t(regionKey(r.openedRegion)) })) : null,
-      loose ? h('div', { class: 'region-open', 'data-testid': 'result-round' }, r.roundLost ? t('roundLost') : won ? t('roundNext', { n: node.round + 2 }) : t('roundKeep', { n: node.round + 1 })) : null,
+      node.type === 'random' ? h('div', { class: 'region-open', 'data-testid': 'result-round' }, r.roundLost ? t('roundLost') : won ? t('roundNext', { n: node.round + 2 }) : t('roundKeep', { n: node.round + 1 })) : null,
       // Compartir da algo jugable (§12.3): 3 nitros, una vez por carrera.
       h('div', { class: 'win-share' },
-        h('button', { class: 'btn block', 'data-testid': 'result-share', onclick: () => shareNode(loose ? 't' + node.race.seed + '.' + node.round : node.id) },
+        h('button', { class: 'btn block', 'data-testid': 'result-share', onclick: () => shareNode(node.type === 'random' ? 't' + node.race.seed + '.' + node.round : node.id) },
           h('span', { class: 'ic', html: IC.share }), t('challengeFriend')),
         !shared && !loose ? h('div', { class: 'share-hint', id: 'shareHint' }, already ? t('shareAlready') : t('shareToEarn')) : null),
       h('div', { class: 'win-actions' },
@@ -361,6 +421,7 @@ function showResult (node, shared, r) {
 }
 
 // ---------- Compartir (§12.3): la misma carrera para el amigo, por #fragment ----------
+/** @param {string} id */
 function shareNode (id) {
   shareNodeId = id;
   // Una carrera del mapa viaja por su nombre (#r=n5); una ronda del sin fin, por su semilla y
@@ -373,6 +434,7 @@ function shareNode (id) {
 function onShared () {
   const id = shareNodeId;
   if (!id || !isUnlocked(progress, id)) return;
+  /** @type {NodeProgress} */
   const p = progress.nodes[id] || {};
   if (p.shared) return;                       // una vez por carrera
   progress.nodes[id] = { ...p, shared: true };
@@ -393,6 +455,7 @@ function openGarage () {
 }
 
 // Iconos de la tienda, en píxeles (como la «Speed Shop» del original).
+/** @type {Record<string, PixelArt>} */
 const SHOP = {
   tires: { rows: ['..kkkkk..', '.kkkkkkk.', 'kkkKKKkkk', 'kkKwwwKkk', 'kkKwKwKkk', 'kkKwwwKkk', 'kkkKKKkkk', '.kkkkkkk.', '..kkkkk..'], colors: { k: '#1e1e22', K: '#44444a', w: '#c0c0c8' } },
   shocks: { rows: ['...yy...', '..yyyy..', '.s....s.', '..ssss..', '.s....s.', '..ssss..', '.s....s.', '..ssss..', '...bb...', '..bbbb..'], colors: { y: '#e0c040', s: '#d0d0d8', b: '#303040' } },
@@ -400,6 +463,7 @@ const SHOP = {
   speed: { rows: ['..wwwww..', '.wwwwwww.', 'wwkkkkkww', 'wwk.k.kww', 'wwkk.kkww', 'wwk.n.kww', 'wwkkkkkww', '.wwrrrww.', '..wwwww..'], colors: { w: '#d8d8e0', k: '#202028', n: '#ffe070', r: '#e02020' } },
   nitro: { rows: ['...ww...', '..wwww..', '..ssss..', '.ssssss.', '.sNNNNs.', '.sNNNNs.', '.ssssss.', '.ssssss.', '..ssss..'], colors: { w: '#e8e8e8', s: '#b8c0c8', N: '#d8362c' } },
 };
+/** @param {number} n */
 const kfmt = (n) => n >= 1000 ? Math.round(n / 1000) + 'K' : String(n);
 
 function renderGarage () {
@@ -408,12 +472,21 @@ function renderGarage () {
   const money = progress.money;
   // Una casilla por mejora: cabecera con el nombre y el precio, el icono y la barra de nivel.
   // Toda la casilla es el botón de comprar; si no alcanza, se ve deshabilitada y dice cuánto falta.
+  /**
+   * @param {string} key
+   * @param {number} price
+   * @param {Node} lvlEl
+   * @param {boolean} can
+   * @param {string} reason
+   * @param {() => void} onBuy
+   */
   const tile = (key, price, lvlEl, can, reason, onBuy) => h('div', { class: 'shop-tile' + (can ? '' : ' off'), 'data-testid': 'up-' + key },
     h('button', { class: 'shop-buy', 'data-testid': 'buy-' + key, disabled: !can, title: t(key + 'Help') + (can ? '' : ' · ' + reason), 'aria-label': t('buy') + ' ' + t(key === 'nitro' ? 'nitroItem' : key) + ' · ' + fmtMoney(price), onclick: onBuy },
       h('div', { class: 'shop-head' }, h('span', {}, t(key === 'nitro' ? 'nitroItem' : key)), h('span', { class: 'shop-price' }, kfmt(price))),
       h('div', { class: 'shop-body' }, pixelArt(SHOP[key].rows, SHOP[key].colors, 4), lvlEl),
       h('div', { class: 'shop-foot' }, can ? t(key + 'Help') : reason),
     ));
+  /** @param {number} lvl */
   const bar = (lvl) => {
     const b = h('div', { class: 'lvl-bar', 'aria-label': t('level', { n: lvl }) });
     for (let k = Math.max(8, lvl) - 1; k >= 0; k--) b.append(h('i', { class: k < lvl ? 'on' : '' }));
@@ -498,6 +571,7 @@ window.__offroad = {
   get progress () { return progress; },
   get view () { return view; },
   get race () { return current?.handle; },
+  /** @param {Progress} p */
   setProgress (p) { progress = p; renderMap(); },
 };
 

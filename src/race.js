@@ -1,16 +1,30 @@
 // Pantalla de carrera: lienzo + marcador + mandos (teclado y táctil). La simulación corre a
 // paso fijo (sim.js); aquí solo se leen los mandos, se dibuja y se suena.
-import { h } from './dom.js';
+import { h, ctx2d } from './dom.js';
 import { t } from './i18n.js';
 import { buildTrack } from './track.js';
 import { createRace, step, livePlace } from './sim.js';
 import { paintTrack, drawRace, emitParticles, stepParticles, pixelArt, PALETTES, SW as W, SH as H, screenX, screenY } from './render.js';
 import * as audio from './audio.js';
 
+/**
+ * @typedef {import('./types').RaceSpec} RaceSpec
+ * @typedef {import('./types').TruckSetup} TruckSetup
+ * @typedef {import('./types').Controls} Controls
+ * @typedef {import('./types').RaceResult} RaceResult
+ * @typedef {import('./render.js').Sprites} Sprites
+ * @typedef {import('./render.js').Fx} Fx
+ */
+
 const DT = 1 / 60;
+/** @param {number} n */
 const ordinal = (n) => t('place' + n);
 
-/** Segundos → `m:ss.d`. */
+/**
+ * Segundos → `m:ss.d`.
+ * @param {number} s
+ * @returns {string}
+ */
 export function fmtTime (s) {
   const m = Math.floor(s / 60), r = s - m * 60;
   return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1);
@@ -20,26 +34,27 @@ export function fmtTime (s) {
  * Arranca una carrera dentro de `host`.
  * @param {object} o
  * @param {HTMLElement} o.host
- * @param {object} o.spec      { layout, reversed, seed, bumps, puddles, grip, laps }
+ * @param {RaceSpec} o.spec      { layout, reversed, seed, bumps, puddles, grip, laps }
  * @param {string} o.region    clave de la región (paleta)
- * @param {Array} o.trucks     el jugador primero, luego los rivales
- * @param {object} o.sprites
+ * @param {TruckSetup[]} o.trucks     el jugador primero, luego los rivales
+ * @param {Sprites} o.sprites
  * @param {string} o.title
- * @param {(result:object)=>void} o.onEnd
+ * @param {(result:RaceResult)=>void} o.onEnd
  * @param {()=>void} o.onExit
  */
 export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, onExit }) {
   const track = buildTrack(spec);
   const bg = paintTrack(track, region);
   const dust = (PALETTES[region] || PALETTES.desert).dust;
-  let race = null;
+  /** @type {Fx} */
   const fx = { parts: [] };
-  const newRace = () => { race = createRace({ track, trucks, laps: spec.laps, seed: spec.seed, grip: spec.grip }); fx.parts.length = 0; };
-  newRace();
+  const makeRace = () => createRace({ track, trucks, laps: spec.laps, seed: spec.seed, grip: spec.grip });
+  let race = makeRace();
+  const newRace = () => { race = makeRace(); fx.parts.length = 0; };
 
   // ---------- DOM ----------
   const cv = h('canvas', { class: 'race-canvas', width: W, height: H, 'data-testid': 'race-canvas' });
-  const ctx = cv.getContext('2d');
+  const ctx = ctx2d(cv);
   ctx.imageSmoothingEnabled = false;
   const wrap = h('div', { class: 'race-wrap' }, cv);
   const hudPlace = h('b', { 'data-testid': 'hud-place' });
@@ -57,6 +72,7 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
   try { const v = localStorage.getItem(LS_ZOOM); if (v === '1' || v === '0') zoom = v === '1'; } catch { /* modo privado */ }
   const zoomBtn = h('button', { class: 'hud-btn zoom', 'data-testid': 'zoom-btn', 'aria-pressed': String(zoom), 'aria-label': t('zoom'), title: t('zoomHelp'), onclick: () => setZoom(!zoom) },
     pixelArt(['.www.', 'w...w', 'w...w', '.www.', '....kk', '.....k'].map(r => r.padEnd(6, '.')), { w: '#f0e8d8', k: '#f0e8d8' }, 3));
+  /** @param {boolean} on */
   function setZoom (on) {
     zoom = on;
     zoomBtn.setAttribute('aria-pressed', String(on));
@@ -78,18 +94,23 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
   // ---------- Mandos: el giro es ANALÓGICO (de -1 a 1) ----------
   // Tres fuentes, por este orden: el volante táctil, la palanca de un mando de juego, y el
   // teclado, que no salta de 0 a tope sino que gira el volante poco a poco.
+  /** @type {Controls} */
   const input = { steer: 0, gas: false, brake: false, nitro: false };
+  /** @type {Record<'left' | 'right' | 'gas' | 'brake' | 'nitro', boolean>} */
   const held = { left: false, right: false, gas: false, brake: false, nitro: false };
+  /** @type {number | null} */
   let wheelAxis = null;      // lo que marca el volante mientras se toca
   let keySteer = 0;          // el volante «virtual» del teclado
   let padState = { steer: 0, gas: false, brake: false, nitro: false };
   // Un toque de nitro más corto que un cuadro no se puede perder: queda apuntado hasta que
   // la simulación da un paso.
   let nitroTap = false, padNitroWas = false, padPauseWas = false;
+  /** @returns {Controls} */
   function readGamepad () {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     for (const gp of pads) {
       if (!gp || !gp.connected) continue;
+      /** @param {number} k */
       const b = (k) => !!gp.buttons[k] && (gp.buttons[k].pressed || gp.buttons[k].value > 0.25);
       const ax = gp.axes[0] || 0;
       const steer = (Math.abs(ax) < 0.12 ? 0 : (ax - Math.sign(ax) * 0.12) / 0.88) + (b(15) ? 1 : 0) - (b(14) ? 1 : 0);
@@ -100,6 +121,7 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
     }
     return { steer: 0, gas: false, brake: false, nitro: false };
   }
+  /** @param {number} el segundos desde el cuadro anterior */
   function readInput (el) {
     const target = (held.right ? 1 : 0) - (held.left ? 1 : 0);
     // El teclado gira rápido hacia el lado pulsado y vuelve solo al centro al soltar.
@@ -112,9 +134,17 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
     input.gas = held.gas || padState.gas; input.brake = held.brake || padState.brake;
     input.nitro = held.nitro || padState.nitro || nitroTap;
   }
+  /**
+   * @param {keyof typeof held} key
+   * @param {string} label
+   * @param {string} cls
+   * @param {string} aria
+   */
   const pad = (key, label, cls, aria) => {
     const b = h('button', { class: 'pad ' + cls, 'data-testid': 'pad-' + key, 'aria-label': aria }, label);
+    /** @param {PointerEvent} e */
     const on = (e) => { e.preventDefault(); held[key] = true; if (key === 'nitro') nitroTap = true; b.classList.add('on'); try { b.setPointerCapture(e.pointerId); } catch { /* sin captura */ } };
+    /** @param {PointerEvent} e */
     const off = (e) => { e.preventDefault(); held[key] = false; b.classList.remove('on'); };
     b.addEventListener('pointerdown', on);
     b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off);
@@ -124,20 +154,24 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
   // Volante: una zona ancha; el dedo más a la derecha o a la izquierda del centro gira más.
   const wheelArt = h('div', { class: 'wheel-art', html: '<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" stroke-width="11"/><circle cx="50" cy="50" r="11" fill="currentColor"/><path d="M50 50 L11 44 M50 50 L89 44 M50 50 L50 91" stroke="currentColor" stroke-width="9" stroke-linecap="round"/><rect x="46" y="4" width="8" height="12" rx="2" fill="#f08a24"/></svg>' });
   const wheel = h('div', { class: 'wheel', 'data-testid': 'wheel', role: 'slider', 'aria-label': t('wheel'), 'aria-valuemin': '-100', 'aria-valuemax': '100', 'aria-valuenow': '0' }, wheelArt);
+  /** @param {number | null} v */
   const turnWheel = (v) => {
     wheelAxis = v;
     wheelArt.style.transform = `rotate(${(v || 0) * 110}deg)`;
     wheel.setAttribute('aria-valuenow', String(Math.round((v || 0) * 100)));
   };
+  /** @param {PointerEvent} e */
   const wheelMove = (e) => {
     e.preventDefault();
     const r = wheel.getBoundingClientRect();
     const v = (e.clientX - (r.left + r.width / 2)) / (r.width * 0.4);
     turnWheel(Math.max(-1, Math.min(1, v)));
   };
+  /** @type {number | null} */
   let wheelPointer = null;
   wheel.addEventListener('pointerdown', (e) => { wheelPointer = e.pointerId; try { wheel.setPointerCapture(e.pointerId); } catch { /* sin captura */ } wheelMove(e); });
   wheel.addEventListener('pointermove', (e) => { if (e.pointerId === wheelPointer) wheelMove(e); });
+  /** @param {PointerEvent} e */
   const wheelUp = (e) => { if (e.pointerId !== wheelPointer) return; wheelPointer = null; turnWheel(null); };
   wheel.addEventListener('pointerup', wheelUp); wheel.addEventListener('pointercancel', wheelUp);
   wheel.addEventListener('contextmenu', e => e.preventDefault());
@@ -157,7 +191,7 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
       h('p', {}, title),
       h('button', { class: 'btn primary block', 'data-testid': 'resume-btn', onclick: () => setPaused(false) }, t('resume')),
       h('button', { class: 'btn block', 'data-testid': 'restart-btn', onclick: () => { newRace(); ended = false; note.classList.remove('gone'); setPaused(false); } }, t('restart')),
-      h('button', { class: 'btn block', 'data-testid': 'mute-btn', onclick: (e) => { audio.setMuted(!audio.isMuted()); e.currentTarget.textContent = audio.isMuted() ? t('soundOff') : t('soundOn'); } }, audio.isMuted() ? t('soundOff') : t('soundOn')),
+      h('button', { class: 'btn block', 'data-testid': 'mute-btn', onclick: (/** @type {MouseEvent} */ e) => { audio.setMuted(!audio.isMuted()); /** @type {HTMLElement} */ (e.currentTarget).textContent = audio.isMuted() ? t('soundOff') : t('soundOn'); } }, audio.isMuted() ? t('soundOff') : t('soundOn')),
       h('button', { class: 'btn block', 'data-testid': 'exit-btn', onclick: () => { destroy(); onExit(); } }, t('exitRace')),
     ));
 
@@ -167,7 +201,11 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
   // ---------- Tamaño: la pista siempre entera y sin girar (la perspectiva tiene un "arriba"). ----------
   // En vertical queda a lo ancho, con los mandos DEBAJO; en horizontal, los mandos van encima
   // de sus esquinas.
-  let scale = 1, camX = null, camY = null;
+  let scale = 1;
+  /** @type {number | null} */
+  let camX = null;
+  /** @type {number | null} */
+  let camY = null;
   const ZOOM = 2.2;
   /** Con zoom: el lienzo se amplía y se desplaza para que tu camioneta quede en medio del
    *  marco (sin salirse de la pista), con la cámara siguiéndola con un poco de retraso. */
@@ -197,12 +235,14 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
   layout();
 
   // ---------- Teclado ----------
+  /** @type {Record<string, keyof typeof held>} */
   const KEYS = {
     ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right',
     ArrowUp: 'gas', w: 'gas', W: 'gas', ArrowDown: 'brake', s: 'brake', S: 'brake',
     ' ': 'nitro', Shift: 'nitro', n: 'nitro', N: 'nitro',
   };
-  const onKey = (down) => (e) => {
+  /** @param {boolean} down */
+  const onKey = (down) => (/** @type {KeyboardEvent} */ e) => {
     if (down && (e.key === 'Escape' || e.key === 'p' || e.key === 'P')) { if (!ended) setPaused(!paused); return; }
     const k = KEYS[e.key];
     if (!k) return;
@@ -216,21 +256,26 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
 
   // ---------- Bucle ----------
   let paused = false, ended = false, alive = true, raf = 0, last = 0, acc = 0, clock = 0, shownGo = 0;
+  /** @param {boolean} p */
   function setPaused (p) {
     paused = p;
     menu.classList.toggle('hidden', !p);
     if (p) audio.engineSet(0, false);
     last = 0;
   }
-  let noteT = null;
-  /** Un aviso corto sobre la pista (se va solo). */
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let noteT;
+  /**
+   * Un aviso corto sobre la pista (se va solo).
+   * @param {string} msg
+   */
   function flashNote (msg) {
     note.textContent = msg; note.classList.remove('gone');
     clearTimeout(noteT); noteT = setTimeout(() => note.classList.add('gone'), 1800);
   }
   function sounds () {
     for (const ev of race.events) {
-      const mine = ev.k === 0;
+      const mine = 'k' in ev && ev.k === 0;
       if (ev.type === 'beep') audio.beep(440, 0.14);
       else if (ev.type === 'go') { audio.beep(880, 0.4); shownGo = 0.9; note.classList.add('gone'); }
       else if (ev.type === 'nitro' && mine) audio.noise(0.5, 0.09, 2400);
@@ -271,6 +316,7 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
       onEnd({ place: me.place, timeMs: Math.round(race.t * 1000), bestLapMs: Math.round(me.bestLap * 1000), nitroLeft: me.nitro, cash: me.cash });
     }, 1300);
   }
+  /** @param {number} now */
   function frame (now) {
     if (!alive) return;
     raf = requestAnimationFrame(frame);
@@ -317,6 +363,7 @@ export function startRace ({ host, spec, region, trucks, sprites, title, onEnd, 
     // Solo para las pruebas E2E: estado de la carrera y forzar el final.
     get race () { return race; },
     input, held,
+    /** @param {number} place */
     forceFinish (place) {
       const me = race.trucks[0];
       const order = race.trucks.filter(x => x !== me);

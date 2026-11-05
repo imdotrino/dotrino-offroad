@@ -1,17 +1,25 @@
 // Sonido sintetizado con Web Audio (sin archivos). El silencio es una preferencia de UI →
 // localStorage (§4). El contexto se crea con el primer gesto del usuario, como exige el navegador.
 const KEY = 'offroad.mute';
-let ctx = null, engine = null, engineGain = null;
+/** @type {AudioContext | null} */
+let ctx = null;
+/** @type {OscillatorNode | null} */
+let engine = null;
+/** @type {GainNode | null} */
+let engineGain = null;
 let muted = false;
 try { muted = localStorage.getItem(KEY) === '1'; } catch { /* modo privado */ }
 
+/** @returns {boolean} */
 export const isMuted = () => muted;
+/** @param {boolean} m */
 export function setMuted (m) {
   muted = !!m;
   try { localStorage.setItem(KEY, muted ? '1' : '0'); } catch { /* modo privado */ }
   if (engineGain) engineGain.gain.value = 0;
 }
 
+/** @returns {AudioContext | null} */
 function ac () {
   if (!ctx) {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -24,6 +32,12 @@ function ac () {
 /** Llamar desde un gesto del usuario (tocar una carrera) para poder sonar después. */
 export const unlock = () => { ac(); };
 
+/**
+ * @param {number} [freq]
+ * @param {number} [dur] segundos
+ * @param {OscillatorType} [type]
+ * @param {number} [vol]
+ */
 export function beep (freq = 440, dur = 0.12, type = 'square', vol = 0.06) {
   if (muted) return;
   const c = ac(); if (!c) return;
@@ -35,6 +49,11 @@ export function beep (freq = 440, dur = 0.12, type = 'square', vol = 0.06) {
   o.start(); o.stop(c.currentTime + dur);
 }
 
+/**
+ * @param {number} [dur] segundos
+ * @param {number} [vol]
+ * @param {number} [cutoff] Hz del paso bajo
+ */
 export function noise (dur = 0.15, vol = 0.08, cutoff = 900) {
   if (muted) return;
   const c = ac(); if (!c) return;
@@ -58,8 +77,13 @@ export function engineStart () {
   engine.connect(f).connect(engineGain).connect(c.destination);
   engine.start();
 }
+/**
+ * @param {number} speed
+ * @param {boolean} boost
+ */
 export function engineSet (speed, boost) {
-  if (!engine || !ctx) return;
+  // engineStart crea los dos a la vez y engineStop los suelta a la vez.
+  if (!engine || !ctx || !engineGain) return;
   engine.frequency.setTargetAtTime(48 + speed * 1.1 + (boost ? 40 : 0), ctx.currentTime, 0.05);
   engineGain.gain.setTargetAtTime(muted ? 0 : 0.022, ctx.currentTime, 0.05);
 }

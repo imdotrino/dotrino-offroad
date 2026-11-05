@@ -6,6 +6,18 @@
 
 // Región: terreno, agarre, obstáculos y puertas de estrellas (entrar / jefe).
 // `rows` son las seis carreras [entrada, izq1, der1, izq2, der2, jefe] como [trazado, alRevés].
+/**
+ * @typedef {import('./types').MapNode} MapNode
+ * @typedef {import('./types').CampaignNode} CampaignNode
+ * @typedef {import('./types').EndlessNode} EndlessNode
+ * @typedef {import('./types').Progress} Progress
+ * @typedef {import('./types').Upgrades} Upgrades
+ * @typedef {import('./types').TruckSetup} TruckSetup
+ * @typedef {{ key: string, hills: number, grip: number, ramps: number, bumps: number, puddles: number, gate: number, bossGate: number, rows: [number, number][] }} Region
+ * @typedef {{ pits: number, maxLevel: number, rocks: number, mounds: number, whoops: number, puddles: number, rampObs: number }} Obstacles
+ */
+
+/** @type {Region[]} */
 const REGIONS = [
   { key: 'desert', hills: 1, grip: 1, ramps: 1, bumps: 1, puddles: 1, gate: 0, bossGate: 6,
     rows: [[6, 0], [0, 0], [3, 0], [4, 0], [2, 0], [1, 0]] },
@@ -20,6 +32,7 @@ const REGIONS = [
 // Obstáculos por región: cada una añade más que la anterior.
 // `rampObs`: cuántos obstáculos lleva cada rampa (zanja tras el borde, puerta de rocas en la
 // subida, ondulado antes, cráter en el aterrizaje; ver RAMP_MENU en track.js).
+/** @type {Record<string, Obstacles>} */
 const OBSTACLES = {
   desert: { pits: 2, maxLevel: 1, rocks: 4, mounds: 4, whoops: 1, puddles: 4, rampObs: 1 },
   forest: { pits: 3, maxLevel: 2, rocks: 5, mounds: 4, whoops: 2, puddles: 5, rampObs: 1 },
@@ -27,11 +40,26 @@ const OBSTACLES = {
   volcano: { pits: 3, maxLevel: 3, rocks: 7, mounds: 5, whoops: 3, puddles: 7, rampObs: 2 },
 };
 
+/** @param {number} idx */
 const seedFor = (idx) => (200003 + idx * 7919) >>> 0;
 
 function build () {
+  /** @type {CampaignNode[]} */
   const nodes = [];
-  let idx = 0, row = 0, prevBoss = null;
+  let idx = 0, row = 0;
+  /** @type {string | null} */
+  let prevBoss = null;
+  /**
+   * @param {'normal' | 'boss'} type
+   * @param {number} ri región
+   * @param {number} slot fila de `rows` de la región
+   * @param {number} x
+   * @param {string[]} requires
+   * @param {'all' | 'any'} requireMode
+   * @param {number} gate
+   * @param {number} depth
+   * @returns {CampaignNode}
+   */
   const mk = (type, ri, slot, x, requires, requireMode, gate, depth) => {
     const reg = REGIONS[ri];
     const [layout, reversed] = reg.rows[slot];
@@ -39,6 +67,7 @@ function build () {
     // La primera carrera es un óvalo y los jefes corren en trazados con cruce; el resto son
     // pistas por piezas, cada vez con más casillas (más curvas).
     const made = !boss && idx !== 0;
+    /** @type {CampaignNode} */
     const n = {
       id: 'n' + idx, type, region: ri, x, row, requires, requireMode, gate,
       label: boss ? 0 : depth + 1,
@@ -73,13 +102,26 @@ function build () {
 
 const MAP = build();
 
+/** @returns {CampaignNode[]} */
 export const allNodes = () => MAP.nodes;
-export const nodeById = (id) => MAP.byId[id] || null;
+/**
+ * @param {string | null} id
+ * @returns {CampaignNode | null}
+ */
+export const nodeById = (id) => (id === null ? undefined : MAP.byId[id]) || null;
+/** @returns {number} */
 export const maxRow = () => MAP.maxRow;
+/** @returns {Region[]} */
 export const regions = () => MAP.regions;
-export const regionKey = (ri) => MAP.regions[ri]?.key;
+/**
+ * @param {number} ri índice de una región de un nodo: siempre existe
+ * @returns {string}
+ */
+export const regionKey = (ri) => /** @type {string} */ (MAP.regions[ri]?.key);
 
+/** @returns {[string, string][]} [requisito, nodo] */
 export function edges () {
+  /** @type {[string, string][]} */
   const out = [];
   for (const n of MAP.nodes) for (const req of n.requires) out.push([req, n.id]);
   return out;
@@ -88,38 +130,77 @@ export function edges () {
 // --- Progreso ---
 // progress.nodes = { [nodeId]: { done, stars:0..3, bestMs, shared } }
 
+/**
+ * @param {Progress | null | undefined} progress
+ * @param {string} id
+ * @returns {number}
+ */
 export const nodeStars = (progress, id) => progress?.nodes?.[id]?.stars || 0;
+/**
+ * @param {Progress | null | undefined} progress
+ * @param {string} id
+ * @returns {boolean}
+ */
 export const isDone = (progress, id) => !!progress?.nodes?.[id]?.done;
+/**
+ * @param {Progress | null | undefined} progress
+ * @returns {number}
+ */
 export function totalStars (progress) {
   let s = 0;
   for (const n of MAP.nodes) s += nodeStars(progress, n.id);
   return s;
 }
+/** @returns {number} */
 export const maxStars = () => MAP.nodes.length * 3;
 
-/** Estrellas por puesto: 1.º → 3, 2.º → 2, 3.º → 1. El 4.º no completa la carrera. */
+/**
+ * Estrellas por puesto: 1.º → 3, 2.º → 2, 3.º → 1. El 4.º no completa la carrera.
+ * @param {number} place
+ * @returns {number}
+ */
 export const starsForPlace = (place) => (place >= 1 && place <= 3 ? 4 - place : 0);
 
+/**
+ * @param {Progress | null | undefined} progress
+ * @param {string} id
+ * @returns {boolean}
+ */
 export function isUnlocked (progress, id) {
   const n = nodeById(id);
   if (!n) return false;
   if (n.gate && totalStars(progress) < n.gate) return false;
   if (!n.requires.length) return true;
+  /** @param {string} rid */
   const done = (rid) => isDone(progress, rid);
   return n.requireMode === 'any' ? n.requires.some(done) : n.requires.every(done);
 }
 
+/**
+ * @param {Progress | null | undefined} progress
+ * @param {string} id
+ * @returns {number}
+ */
 export function starsMissing (progress, id) {
   const n = nodeById(id);
   if (!n || !n.gate) return 0;
   return Math.max(0, n.gate - totalStars(progress));
 }
 
+/**
+ * @param {Progress | null | undefined} progress
+ * @returns {string | null}
+ */
 export function nextNodeId (progress) {
   for (const n of MAP.nodes) if (!isDone(progress, n.id) && isUnlocked(progress, n.id)) return n.id;
   return null;
 }
 
+/**
+ * @param {Progress | null | undefined} progress
+ * @param {string} id
+ * @returns {string | null}
+ */
 export function followingNodeId (progress, id) {
   for (const n of MAP.nodes) {
     if (n.requires.includes(id) && isUnlocked(progress, n.id) && !isDone(progress, n.id)) return n.id;
@@ -135,6 +216,12 @@ export function followingNodeId (progress, id) {
  */
 export const ENDLESS_LEAD = 1.15;    // los rivales van un 15 % por delante del taller…
 export const ENDLESS_STEP = 0.45;    // …y cada ronda suma esto (una mejora cuesta 40.000 + 30.000·nivel)
+/**
+ * @param {number} seed
+ * @param {Upgrades} up el taller del jugador
+ * @param {number} [round]
+ * @returns {EndlessNode}
+ */
 export function randomNode (seed, up, round = 0) {
   const s = seed >>> 0, r = Math.max(0, round | 0);
   // Las primeras rondas recorren las regiones en orden (cada una con más obstáculos); después
@@ -153,31 +240,57 @@ export function randomNode (seed, up, round = 0) {
     },
   };
 }
-/** Premio de una ronda sin fin: la mitad del de una carrera del mapa, y un 35 % más por ronda. */
+/**
+ * Premio de una ronda sin fin: la mitad del de una carrera del mapa, y un 35 % más por ronda.
+ * @param {{ round: number }} node
+ * @param {number} place
+ * @returns {number}
+ */
 export const randomPrize = (node, place) => Math.round(([0, 60000, 40000, 25000, 10000][place] || 0) * 0.7 * (1 + 0.35 * node.round) / 1000) * 1000;
 
 // --- Economía ---
+/** @type {(keyof Upgrades)[]} */
 export const UPGRADES = ['tires', 'shocks', 'accel', 'speed'];
 // Las mejoras no tienen tope: cada nivel cuesta más (upgradePrice) y suma lo mismo.
 export const NITRO_PRICE = 8000;
+/** @type {{ money: number, nitro: number, up: Upgrades }} */
 export const START = { money: 60000, nitro: 5, up: { tires: 0, shocks: 0, accel: 0, speed: 0 } };
 
+/**
+ * @param {number} level
+ * @returns {number}
+ */
 export const upgradePrice = (level) => 45000 + 35000 * level;
 
-/** Premio por puesto en una carrera. */
+/**
+ * Premio por puesto en una carrera.
+ * @param {MapNode} node
+ * @param {number} place
+ * @returns {number}
+ */
 export function prizeFor (node, place) {
   const base = [0, 60000, 45000, 28000, 10000][place] || 0;
   const mult = (1 + 0.6 * node.region) * (node.type === 'boss' ? 1.5 : 1);
   return Math.round(base * mult / 1000) * 1000;
 }
+/**
+ * @param {MapNode} node
+ * @returns {number}
+ */
 export const cashPickupValue = (node) => 3000 * (node.region + 1);
 
-/** Los tres rivales de una carrera. El jefe corre de negro y casi no falla. */
+/**
+ * Los tres rivales de una carrera. El jefe corre de negro y casi no falla.
+ * @param {MapNode} node
+ * @returns {TruckSetup[]}
+ */
 export function rivalsFor (node) {
   const L = node.race.level;
   const endless = node.type === 'random';
   // En el campeonato las máquinas tienen techo; en el sin fin, no.
+  /** @param {number} x */
   const lv = (x) => Math.max(0, endless ? x : Math.min(6.5, x));
+  /** @param {number} x @returns {Upgrades} */
   const up = (x) => ({ tires: lv(x), shocks: lv(x), accel: lv(x), speed: lv(x) });
   // La primera carrera es para aprender a manejar, y la primera región va con calma.
   const ease = node.id === 'n0' ? 0.09 : node.region === 0 && !node.race.boss && !endless ? 0.04 : 0;

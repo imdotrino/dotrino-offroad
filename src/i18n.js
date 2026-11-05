@@ -1,5 +1,6 @@
 // Bilingüe es/en (§9). El idioma es una preferencia de UI → localStorage, en la clave del
 // ecosistema (la misma que escribe <dotrino-topbar>). Español neutro: TUTEO, nunca voseo.
+/** @type {Record<'es' | 'en', Record<string, string>>} */
 const DICT = {
   es: {
     brand: 'Offroad',
@@ -105,24 +106,33 @@ const DICT = {
 
 const LS_LANG = 'dotrino.lang';
 
+/** @type {'es' | 'en'} */
 let lang = (() => {
   try { const s = localStorage.getItem(LS_LANG); if (s === 'es' || s === 'en') return s; } catch { /* modo privado */ }
   return (navigator.language || 'es').toLowerCase().startsWith('en') ? 'en' : 'es';
 })();
 try { document.documentElement.lang = lang; } catch { /* sin DOM */ }
 
+/** @returns {'es' | 'en'} */
 export function getLang () { return lang; }
+/** @param {string} l */
 export function setLang (l) {
   lang = l === 'en' ? 'en' : 'es';
   try { localStorage.setItem(LS_LANG, lang); } catch { /* modo privado */ }
   try { document.documentElement.lang = lang; } catch { /* sin DOM */ }
 }
 
+/**
+ * @param {string} key
+ * @param {Record<string, string | number>} [params] lo que sustituye a `{clave}`
+ * @returns {string}
+ */
 export function t (key, params) {
   let s = (DICT[lang] && DICT[lang][key]) ?? DICT.es[key] ?? key;
-  if (params) for (const k in params) s = s.replaceAll('{' + k + '}', params[k]);
+  if (params) for (const k in params) s = s.replaceAll('{' + k + '}', String(params[k]));
   return s;
 }
 
 /** Dinero con separador de miles: $60.000 / $60,000. */
+/** @param {number} n @returns {string} */
 export const fmtMoney = (n) => '$' + Math.round(n).toLocaleString(lang === 'en' ? 'en-US' : 'es-EC');

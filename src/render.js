@@ -4,6 +4,25 @@
 // carrera y cada cuadro solo se le ponen encima las camionetas, las partículas y el premio.
 // Nada de imágenes: todo sale de código.
 import { W, H, rng, heightAt, RAMP_LEN } from './track.js';
+import { ctx2d } from './dom.js';
+
+/**
+ * @typedef {import('./track.js').Track} Track
+ * @typedef {import('./sim.js').Race} Race
+ * @typedef {import('./types').Truck} Truck
+ * @typedef {import('./types').TruckColor} TruckColor
+ * @typedef {import('./types').Sample} Sample
+ * @typedef {number[]} RGB
+ * @typedef {{ rock: RGB, out: RGB, out2: RGB, track: RGB, track2: RGB, wallA: RGB, wallB: RGB, mud: RGB, mudHi: RGB, dust: string, deco: string, tuft: RGB }} Palette
+ * @typedef {{ rows: string[], colors: Record<string, string> }} Deco
+ * @typedef {{ pixels: Uint8ClampedArray, dy: Float32Array }} TruckPixels
+ * @typedef {HTMLCanvasElement & TruckPixels} TruckFrame
+ * @typedef {HTMLCanvasElement & { depth: Uint16Array }} TrackCanvas
+ * @typedef {{ scratch: HTMLCanvasElement, shadow: HTMLCanvasElement[], tilted: (color: TruckColor, f: number, pitch: number, roll: number) => TruckPixels } & Record<TruckColor, TruckFrame[]>} Sprites
+ * @typedef {{ x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, max: number, size: number, color: string }} Particle
+ * @typedef {{ parts: Particle[] }} Fx
+ * @typedef {{ x1: number, y1: number, x2: number, y2: number, on?: boolean }} Trail
+ */
 
 const SHEAR = 0.2;             // cuánto se corre a la derecha cada unidad de fondo
 export const SW = W + Math.ceil(SHEAR * H) + 1;    // tamaño de la pantalla (lienzo)
@@ -13,11 +32,22 @@ const KZ = 0.8;                // cuánto sube en pantalla una unidad de altura
 const OFF = 60;                // margen de arriba: piso 3 + rampa + una camioneta saltando encima
 const WALL_H = 5;
 
-/** Del mundo (x, y, altura) a la fila de la pantalla. La columna es la misma x. */
+/**
+ * Del mundo (x, y, altura) a la fila de la pantalla. La columna es la misma x.
+ * @param {number} y
+ * @param {number} z
+ * @returns {number}
+ */
 export const screenY = (y, z) => y * KY - z * KZ + OFF;
-/** Y la columna: la x, corrida según lo lejos que esté. */
+/**
+ * Y la columna: la x, corrida según lo lejos que esté.
+ * @param {number} x
+ * @param {number} y
+ * @returns {number}
+ */
 export const screenX = (x, y) => x + SHEAR * (H - 1 - y);
 
+/** @type {Record<string, Palette>} */
 export const PALETTES = {
   desert: { rock: [150, 132, 112], out: [216, 172, 104], out2: [202, 156, 90], track: [152, 106, 62], track2: [140, 96, 54],
     wallA: [222, 58, 48], wallB: [240, 240, 232], mud: [92, 62, 38], mudHi: [124, 90, 58], dust: '#d9b98a', deco: 'cactus', tuft: [184, 160, 88] },
@@ -29,6 +59,7 @@ export const PALETTES = {
     wallA: [250, 140, 40], wallB: [38, 32, 38], mud: [232, 92, 30], mudHi: [255, 196, 72], dust: '#9a8088', deco: 'rock', tuft: [90, 70, 80] },
 };
 
+/** @param {number} x @param {number} y */
 const hash = (x, y) => {
   let h = (x * 374761393 + y * 668265263) | 0;
   h = (h ^ (h >>> 13)) * 1274126177 | 0;
@@ -36,6 +67,12 @@ const hash = (x, y) => {
 };
 
 /** Ruido suave (manchas) a la escala `s`: interpola el ruido de una rejilla. */
+/**
+ * @param {number} x
+ * @param {number} y
+ * @param {number} s
+ * @returns {number}
+ */
 function blotch (x, y, s) {
   const gx = x / s, gy = y / s, x0 = Math.floor(gx), y0 = Math.floor(gy);
   let fx = gx - x0, fy = gy - y0;
@@ -46,6 +83,7 @@ function blotch (x, y, s) {
 
 // Adornos del terreno (fuera de la pista). Letras → color. Cada región mezcla varios, con su
 // peso, y a lo largo de la valla van los de borde de pista (llantas, conos, pacas, banderines).
+/** @type {Record<string, Deco>} */
 const DECO = {
   cactus: { rows: ['.g.', 'ggg', 'ggg', '.g.', '.g.'], colors: { g: '#3f8a4a' } },
   saguaro: { rows: ['.g.g', 'gg.g', '.ggg', '.g..', '.g..', '.g..'], colors: { g: '#36803f' } },
@@ -72,6 +110,7 @@ const DECO = {
   barrel: { rows: ['bb', 'BB', 'bb'], colors: { b: '#3060c0', B: '#5080e0' } },
 };
 // Qué adornos lleva cada región: [nombre, peso] por el campo, y los de la valla.
+/** @type {Record<string, { field: [string, number][], fence: string[] }>} */
 const DECO_SETS = {
   cactus: { field: [['cactus', 4], ['saguaro', 2], ['drybush', 5], ['stone', 4], ['skull', 1]], fence: ['tires', 'cone', 'bale'] },
   bush: { field: [['bush', 4], ['tree', 4], ['stump', 2], ['fern', 4]], fence: ['bale', 'tires', 'flag'] },
@@ -79,15 +118,21 @@ const DECO_SETS = {
   rock: { field: [['rock', 4], ['lava', 2], ['deadtree', 2], ['boulder', 2]], fence: ['barrel', 'tires', 'cone'] },
 };
 
-/** Pinta el terreno de una pista y devuelve el lienzo (W×H). */
+/**
+ * Pinta el terreno de una pista y devuelve el lienzo (W×H).
+ * @param {Track} track
+ * @param {string} regionKey
+ * @returns {TrackCanvas}
+ */
 export function paintTrack (track, regionKey) {
   const pal = PALETTES[regionKey] || PALETTES.desert;
   const cv = document.createElement('canvas');
   cv.width = SW; cv.height = SH;
-  const ctx = cv.getContext('2d');
+  const ctx = ctx2d(cv);
   // 1) Color de cada punto del MUNDO, visto desde arriba.
   const px = new Uint8ClampedArray(W * H * 4);
   const half = track.half;
+  /** @param {number} x @param {number} y @param {RGB} c @param {number} [k] */
   const set = (x, y, c, k = 1) => {
     const i = (y * W + x) * 4;
     px[i] = c[0] * k; px[i + 1] = c[1] * k; px[i + 2] = c[2] * k; px[i + 3] = 255;
@@ -132,11 +177,13 @@ export function paintTrack (track, regionKey) {
       }
     }
   }
+  /** @param {number} x @param {number} y @param {number} k */
   const mul = (x, y, k) => {
     const i = (y * W + x) * 4;
     px[i] = Math.min(255, px[i] * k); px[i + 1] = Math.min(255, px[i + 1] * k); px[i + 2] = Math.min(255, px[i + 2] * k);
   };
   // Recorre el rectángulo alrededor de una muestra en sus coordenadas locales (u a lo largo, v a lo ancho).
+  /** @param {Sample} s @param {(x: number, y: number, u: number, v: number) => void} fn */
   const stripe = (s, fn) => {
     const r = half + 2;
     for (let y = Math.max(0, (s.y - r) | 0); y <= Math.min(H - 1, (s.y + r) | 0); y++) {
@@ -246,6 +293,7 @@ export function paintTrack (track, regionKey) {
   // de 6 de hondo quedaba casi entero en sombra y volvía a ser una mancha.
   const ldx = -LIGHT[0], ldy = -LIGHT[1], ll = Math.hypot(ldx, ldy), climb = 2.2;
   for (const pt of track.pits) {
+    /** @param {number} x @param {number} y */
     const dep = (x, y) => (x < 0 || y < 0 || x >= pt.w || y >= pt.h ? 0 : pt.dep[y * pt.w + x]);
     for (let y = 0; y < pt.h; y++) for (let x = 0; x < pt.w; x++) {
       const d0 = dep(x, y);
@@ -323,7 +371,7 @@ export function paintTrack (track, regionKey) {
     }
   }
   ctx.putImageData(img, 0, 0);
-  cv.depth = depth;
+  const withDepth = Object.assign(cv, { depth });
 
   // Adornos fuera de la pista: muchos por el campo (varias clases, por peso), más densos
   // cerca de la pista, y una fila de borde pegada a la valla por fuera (llantas, conos,
@@ -331,7 +379,9 @@ export function paintTrack (track, regionKey) {
   const kinds = DECO_SETS[pal.deco];
   const rand = rng(track.spec.seed ^ 0x51ed);
   const pick = () => { let tot = 0; for (const [, w] of kinds.field) tot += w; let r = rand() * tot; for (const [name, w] of kinds.field) { r -= w; if (r <= 0) return DECO[name]; } return DECO[kinds.field[0][0]]; };
+  /** @type {[number, number, Deco][]} */
   const spots = [];
+  /** @param {number} x @param {number} y @param {number} d */
   const free = (x, y, d) => spots.every(s => Math.hypot(s[0] - x, s[1] - y) >= d);
   for (let k = 0; k < 3000 && spots.length < 420; k++) {
     const x = 4 + Math.floor(rand() * (W - 10)), y = 8 + Math.floor(rand() * (H - 14));
@@ -369,7 +419,7 @@ export function paintTrack (track, regionKey) {
       }
     });
   }
-  return cv;
+  return withDepth;
 }
 
 // ---------- Camionetas ----------
@@ -400,6 +450,7 @@ function truckModel () {
   // Bisel: la altura se limita por lo que dista del borde de su pieza (pendiente 1), en dos
   // pasadas, y se suaviza una vez: aristas en chaflán y esquinas redondeadas.
   const b = new Float32Array(h);
+  /** @param {number} gx @param {number} gy */
   const at = (gx, gy) => (gx < 0 || gy < 0 || gx >= MW || gy >= MH ? 0 : h[gy * MW + gx]);
   for (let gy = 0; gy < MH; gy++) for (let gx = 0; gx < MW; gx++) {
     let lim = h[gy * MW + gx];
@@ -412,6 +463,7 @@ function truckModel () {
   return { h: b, c };
 }
 const MODEL = truckModel();
+/** @type {Record<TruckColor, { B: string, D: string, h: string }>} */
 export const TRUCK_COLORS = {
   red: { B: '#e23b30', D: '#7c1710', h: '#ff8a7a' },
   blue: { B: '#2f7be0', D: '#143c78', h: '#8cc0ff' },
@@ -425,10 +477,12 @@ const SP = 42;        // lado del cuadro de cada sprite
 const AY = 27;        // fila del cuadro donde pisa el centro de la camioneta
 const LIGHT = [-0.5, -0.6, 0.62];   // de dónde viene la luz (noroeste, en alto)
 
+/** @param {string} hex @returns {RGB} */
 const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
 
-const PALETTE = {};
-for (const color of Object.keys(TRUCK_COLORS)) {
+/** @type {Record<TruckColor, (RGB | null)[]>} índice = código de celda del modelo (0 nada) */
+const PALETTE = /** @type {Record<TruckColor, (RGB | null)[]>} */ ({});
+for (const color of /** @type {TruckColor[]} */ (Object.keys(TRUCK_COLORS))) {
   const B = rgb(TRUCK_COLORS[color].B);
   PALETTE[color] = [null, B, rgb(TRUCK_COLORS[color].D), rgb('#8fc8f4'), B.map(v => Math.min(255, v * 1.12 + 10)), rgb('#1b1b20'), rgb('#fff6b0')];
 }
@@ -437,6 +491,12 @@ for (const color of Object.keys(TRUCK_COLORS)) {
  * Dibuja la camioneta girada `a` (rumbo), con el morro levantado `pitch` y ladeada `roll`
  * (radianes; positivo = morro arriba / lado izquierdo arriba). Devuelve los píxeles del cuadro
  * y, por píxel, la profundidad (y del mundo) para que el terreno la tape donde toca.
+ *
+ * @param {TruckColor} color
+ * @param {number} a
+ * @param {number} pitch
+ * @param {number} roll
+ * @returns {TruckPixels}
  */
 function renderTruck (color, a, pitch, roll) {
   const pal = PALETTE[color];
@@ -444,12 +504,14 @@ function renderTruck (color, a, pitch, roll) {
   const out = new Uint8ClampedArray(SP * SP * 4), dy = new Float32Array(SP * SP);
   const ca = Math.cos(a), sa = Math.sin(a), cp = Math.cos(pitch), sp = Math.sin(pitch), cr = Math.cos(roll), sr = Math.sin(roll);
   // Un punto (o una normal) del modelo, en su sitio: balanceo, cabeceo y rumbo, en ese orden.
+  /** @param {number} lx @param {number} ly @param {number} lz @returns {number[]} */
   const turn = (lx, ly, lz) => {
     const y1 = ly * cr - lz * sr, z1 = lz * cr + ly * sr;
     const x2 = lx * cp - z1 * sp, z2 = z1 * cp + lx * sp;
     return [x2 * ca - y1 * sa, x2 * sa + y1 * ca, z2];
   };
   // Cada celda, girada; del fondo al frente, para que lo de delante tape.
+  /** @type {{ rx: number, ry: number, z: number, bz: number, by: number, c: number, lit: number }[]} */
   const cells = [];
   for (let gy = 0; gy < MH; gy++) for (let gx = 0; gx < MW; gx++) {
     const k = gy * MW + gx;
@@ -463,6 +525,7 @@ function renderTruck (color, a, pitch, roll) {
     cells.push({ rx: top[0], ry: top[1], z: top[2], bz: base[2], by: base[1], c: c[k], lit });
   }
   cells.sort((p, q) => p.ry - q.ry);
+  /** @param {number} x @param {number} y @param {RGB} col @param {number} k @param {number} ry */
   const put = (x, y, col, k, ry) => {
     if (x < 0 || y < 0 || x >= SP || y >= SP) return;
     const o = (y * SP + x) * 4;
@@ -472,7 +535,8 @@ function renderTruck (color, a, pitch, roll) {
   for (const d of cells) {
     const x = Math.round(SP / 2 + d.rx - d.ry * SHEAR - 0.5);
     const top = Math.round(AY + d.ry * KY - d.z * KZ), bottom = Math.round(AY + d.by * KY - d.bz * KZ);
-    const col = pal[d.c], k = 0.72 + 0.55 * Math.max(0, d.lit);
+    // Solo se recorren celdas con código (`if (!c[k]) continue`): su color existe.
+    const col = /** @type {RGB} */ (pal[d.c]), k = 0.72 + 0.55 * Math.max(0, d.lit);
     // Columna: desde su altura hasta su base (el costado, más oscuro), y la cara de arriba
     // en un bloque de 2×2, para que entre dos celdas vecinas no asome el costado.
     for (let y = top + 2; y <= bottom; y++) { put(x, y, col, 0.52, d.ry); put(x + 1, y, col, 0.52, d.ry); }
@@ -482,34 +546,40 @@ function renderTruck (color, a, pitch, roll) {
 }
 
 const TILT_STEP = 0.09, TILT_MAX = Math.PI / 4;   // la inclinación se redondea a ~5° para la caché
+/** @param {number} r */
 const tiltIdx = (r) => Math.round(Math.max(-TILT_MAX, Math.min(TILT_MAX, r)) / TILT_STEP);
 
+/**
+ * @param {TruckColor} color
+ * @returns {TruckFrame[]}
+ */
 function truckFrames (color) {
   const frames = [];
   for (let f = 0; f < FRAMES; f++) {
     const cv = document.createElement('canvas');
     cv.width = SP; cv.height = SP;
-    const ctx = cv.getContext('2d');
+    const ctx = ctx2d(cv);
     const img = ctx.createImageData(SP, SP);
     const r = renderTruck(color, (f / FRAMES) * Math.PI * 2, 0, 0);
     img.data.set(r.pixels);
     ctx.putImageData(img, 0, 0);
-    cv.pixels = r.pixels;
-    cv.dy = r.dy;
-    frames.push(cv);
+    frames.push(Object.assign(cv, { pixels: r.pixels, dy: r.dy }));
   }
   return frames;
 }
 
+/** @returns {Sprites} */
 export function makeSprites () {
-  const out = {};
+  // Se rellena aquí mismo, pieza a pieza.
+  const out = /** @type {Sprites} */ ({});
   out.scratch = document.createElement('canvas');
   out.scratch.width = SP; out.scratch.height = SP;
-  for (const color of Object.keys(TRUCK_COLORS)) out[color] = truckFrames(color);
+  for (const color of /** @type {TruckColor[]} */ (Object.keys(TRUCK_COLORS))) out[color] = truckFrames(color);
   // Cuadros inclinados, dibujados la primera vez que hacen falta y guardados. Con tope: cada
   // cuadro pesa 14 KB y en una carrera salen unos 25 nuevos por segundo; sin tope la caché
   // crecía 20 MB por minuto hasta que el recolector de basura paraba el juego. Se tira el
   // que lleva más tiempo sin usarse.
+  /** @type {Map<string, TruckPixels>} */
   const tilted = new Map(), TILT_CACHE = 1500;
   out.tilted = (color, f, pitch, roll) => {
     const pi = tiltIdx(pitch), ri = tiltIdx(roll);
@@ -519,7 +589,7 @@ export function makeSprites () {
     if (r) { tilted.delete(key); tilted.set(key, r); return r; }     // al final: recién usado
     r = renderTruck(color, (f / FRAMES) * Math.PI * 2, pi * TILT_STEP, ri * TILT_STEP);
     tilted.set(key, r);
-    if (tilted.size > TILT_CACHE) tilted.delete(tilted.keys().next().value);
+    if (tilted.size > TILT_CACHE) tilted.delete(/** @type {string} */ (tilted.keys().next().value));
     return r;
   };
   // Sombra: la huella de la camioneta en el suelo, por ángulo.
@@ -527,7 +597,7 @@ export function makeSprites () {
   for (let f = 0; f < FRAMES; f++) {
     const cv = document.createElement('canvas');
     cv.width = SP; cv.height = SP;
-    const ctx = cv.getContext('2d');
+    const ctx = ctx2d(cv);
     const a = (f / FRAMES) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
     ctx.fillStyle = 'rgba(0,0,0,.34)';
     for (let lx = -6.5 * TS; lx <= 6.5 * TS; lx += 0.5) for (let ly = -3.5 * TS; ly <= 3.5 * TS; ly += 0.5) {
@@ -539,25 +609,42 @@ export function makeSprites () {
   return out;
 }
 
-/** Una camioneta sola (para el taller y el mapa), ampliada sin suavizar. */
+/**
+ * Una camioneta sola (para el taller y el mapa), ampliada sin suavizar.
+ * @param {Sprites} sprites
+ * @param {TruckColor} color
+ * @param {number} [scale]
+ * @param {number} [frame]
+ * @returns {HTMLCanvasElement}
+ */
 export function truckIcon (sprites, color, scale = 4, frame = 0) {
   const cv = document.createElement('canvas');
   cv.width = SP * scale; cv.height = SP * scale;
   cv.className = 'truck-icon';
-  const ctx = cv.getContext('2d');
+  const ctx = ctx2d(cv);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(sprites[color][frame], 0, 0, SP * scale, SP * scale);
   return cv;
 }
 
+/** @type {Record<'nitro' | 'cash', Deco>} */
 const PICKUP = {
   nitro: { rows: ['.ww.', 'rrrr', 'rNNr', 'rNNr', 'rrrr'], colors: { w: '#e8e8e8', r: '#d8362c', N: '#ffe070' } },
   cash: { rows: ['.gg.', 'gGGg', 'gYYg', 'gGGg', '.gg.'], colors: { g: '#1f7a3a', G: '#35b05a', Y: '#ffe070' } },
 };
 
-/** Dibuja un cuadro de la carrera. `fx.parts` son las partículas (polvo, llama, barro). */
+/**
+ * Dibuja un cuadro de la carrera. `fx.parts` son las partículas (polvo, llama, barro).
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {TrackCanvas} bg
+ * @param {Race} race
+ * @param {Sprites} sprites
+ * @param {Fx} fx
+ * @param {number} t segundos de reloj (para parpadeos)
+ */
 export function drawRace (ctx, bg, race, sprites, fx, t) {
   const track = race.track;
+  /** @param {number} x @param {number} y */
   const ground = (x, y) => heightAt(track, x, y);
   ctx.drawImage(bg, 0, 0);
   for (const p of fx.parts) {
@@ -580,14 +667,16 @@ export function drawRace (ctx, bg, race, sprites, fx, t) {
     });
   }
   const order = race.trucks.slice().sort((a, b) => a.y - b.y);     // las de atrás primero
+  /** @param {Truck} tr */
   const frameOf = (tr) => ((Math.round(tr.a / (Math.PI * 2) * FRAMES) % FRAMES) + FRAMES) % FRAMES;
+  /** @param {Truck} tr */
   const left = (tr) => Math.round(screenX(tr.x, tr.y) - SP / 2);
   for (const tr of order) {
     ctx.drawImage(sprites.shadow[frameOf(tr)], left(tr) + 1, Math.round(screenY(tr.y, ground(tr.x, tr.y))) - AY + 1);
   }
   // Cada camioneta se dibuja píxel a píxel contra el terreno: lo que tiene delante (una
   // valla, una loma, el borde de una rampa) la tapa.
-  const sctx = sprites.scratch.getContext('2d');
+  const sctx = ctx2d(sprites.scratch);
   const tmp = sctx.createImageData(SP, SP);
   for (const tr of order) {
     const fr = sprites.tilted(tr.color, frameOf(tr), tr.pitch || 0, tr.roll || 0);
@@ -615,7 +704,12 @@ export function drawRace (ctx, bg, race, sprites, fx, t) {
   }
 }
 
-/** Partículas: polvo al rodar, llama del nitro y salpicadura del charco. */
+/**
+ * Partículas: polvo al rodar, llama del nitro y salpicadura del charco.
+ * @param {Race} race
+ * @param {Fx} fx
+ * @param {string} dust color del polvo
+ */
 export function emitParticles (race, fx, dust) {
   for (const tr of race.trucks) {
     const speed = Math.hypot(tr.vx, tr.vy);
@@ -629,6 +723,10 @@ export function emitParticles (race, fx, dust) {
   if (fx.parts.length > 260) fx.parts.splice(0, fx.parts.length - 260);
 }
 
+/**
+ * @param {Fx} fx
+ * @param {number} dt
+ */
 export function stepParticles (fx, dt) {
   for (let i = fx.parts.length - 1; i >= 0; i--) {
     const p = fx.parts[i];
@@ -646,22 +744,28 @@ export function stepParticles (fx, dt) {
  * amplía sin suavizar.
  * `bands`: [{ key, end }] en orden a lo largo de `axis` ('y': de arriba abajo; 'x': de
  * izquierda a derecha); `trails`: [{ x1, y1, x2, y2, on }]; `pads`: [{ x, y, r }].
+ *
+ * @param {{ w: number, h: number, bands: { key: string, end: number }[], axis?: 'x' | 'y', trails: Trail[], pads: { x: number, y: number, r: number }[], seed?: number }} opts
+ * @returns {HTMLCanvasElement}
  */
 export function paintMap ({ w, h, bands, axis = 'y', trails, pads, seed = 7 }) {
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
-  const ctx = cv.getContext('2d');
+  const ctx = ctx2d(cv);
   const px = new Uint8ClampedArray(w * h * 4);
+  /** @param {number} x @param {number} y @param {RGB} c @param {number} [k] */
   const set = (x, y, c, k = 1) => {
     const i = (y * w + x) * 4;
     px[i] = c[0] * k; px[i + 1] = c[1] * k; px[i + 2] = c[2] * k; px[i + 3] = 255;
   };
+  /** @param {number} x @param {number} y */
   const palAt = (x, y) => {
     // El borde entre regiones serpentea y se come un par de píxeles a cada lado.
     const u = (axis === 'x' ? x : y) + (blotch(x + 300, y, 7) - 0.5) * 9;
     for (const b of bands) if (u < b.end) return PALETTES[b.key];
     return PALETTES[bands[bands.length - 1].key];
   };
+  /** @param {number} x @param {number} y @param {Trail} s */
   const segDist = (x, y, s) => {
     const dx = s.x2 - s.x1, dy = s.y2 - s.y1, l2 = dx * dx + dy * dy || 1;
     const u = Math.max(0, Math.min(1, ((x - s.x1) * dx + (y - s.y1) * dy) / l2));
@@ -672,6 +776,7 @@ export function paintMap ({ w, h, bands, axis = 'y', trails, pads, seed = 7 }) {
     for (let x = 0; x < w; x++) {
       const pal = palAt(x, y);
       const n = hash(x, y), n2 = hash(x >> 1, y >> 1);
+      /** @type {{ d: number, u: number, lat: number, s: Trail } | null} */
       let best = null;
       for (const s of trails) { const r = segDist(x, y, s); if (!best || r.d < best.d) best = { ...r, s }; }
       let pad = 1e9;
@@ -700,8 +805,11 @@ export function paintMap ({ w, h, bands, axis = 'y', trails, pads, seed = 7 }) {
 
   // Adornos: por el campo, lejos de caminos y claros, con los de la región de cada punto.
   const rand = rng(seed);
+  /** @type {[number, number, Deco][]} */
   const spots = [];
+  /** @param {number} x @param {number} y @param {number} d */
   const free = (x, y, d) => spots.every(s => Math.hypot(s[0] - x, s[1] - y) >= d);
+  /** @param {number} x @param {number} y */
   const clear = (x, y) => trails.every(s => segDist(x, y, s).d > RT + 3) && pads.every(p => Math.hypot(x - p.x, y - p.y) > p.r + 4);
   const budget = Math.floor(w * h / 60);
   for (let k = 0; k < budget * 8 && spots.length < budget; k++) {
@@ -728,12 +836,18 @@ export function paintMap ({ w, h, bands, axis = 'y', trails, pads, seed = 7 }) {
   return cv;
 }
 
-/** Un dibujito de píxeles (filas de letras → colores, como los adornos), ampliado sin suavizar. */
+/**
+ * Un dibujito de píxeles (filas de letras → colores, como los adornos), ampliado sin suavizar.
+ * @param {string[]} rows
+ * @param {Record<string, string>} colors
+ * @param {number} [scale]
+ * @returns {HTMLCanvasElement}
+ */
 export function pixelArt (rows, colors, scale = 3) {
   const cv = document.createElement('canvas');
   cv.width = rows[0].length * scale; cv.height = rows.length * scale;
   cv.className = 'px-art';
-  const ctx = cv.getContext('2d');
+  const ctx = ctx2d(cv);
   rows.forEach((row, y) => {
     for (let x = 0; x < row.length; x++) {
       if (row[x] === '.') continue;
@@ -743,13 +857,19 @@ export function pixelArt (rows, colors, scale = 3) {
   return cv;
 }
 
-/** Miniatura del trazado de una carrera (como la casilla «start next race» del original). */
+/**
+ * Miniatura del trazado de una carrera (como la casilla «start next race» del original).
+ * @param {Sample[]} samples
+ * @param {string} regionKey
+ * @param {number} [size]
+ * @returns {HTMLCanvasElement}
+ */
 export function trackThumb (samples, regionKey, size = 22) {
   const pal = PALETTES[regionKey] || PALETTES.desert;
   const cv = document.createElement('canvas');
   cv.width = cv.height = size;
   cv.className = 'px-art track-thumb';
-  const ctx = cv.getContext('2d');
+  const ctx = ctx2d(cv);
   const sx = (size - 4) / W, sy = (size - 4) / H;
   ctx.fillStyle = `rgba(${pal.out.join(',')},.55)`; ctx.fillRect(0, 0, size, size);
   const path = () => {

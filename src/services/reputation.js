@@ -4,9 +4,13 @@
 import { createVaultReputation } from '@dotrino/reputation';
 import { getIdentity } from './identity.js';
 
+/** @type {import('@dotrino/reputation').VaultReputation | null} */
 let _rep = null;
 
-/** Instancia compartida de reputación (o null si no hay vault). */
+/**
+ * Instancia compartida de reputación (o null si no hay vault).
+ * @returns {Promise<import('@dotrino/reputation').VaultReputation | null>}
+ */
 export async function getReputation() {
   if (_rep) return _rep;
   const id = await getIdentity();
